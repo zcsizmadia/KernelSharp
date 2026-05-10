@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <RootNamespace>KernelSharp</RootNamespace>
+    <AssemblyName>KernelSharp</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+
+    <!-- Package metadata -->
+    <PackageId>KernelSharp</PackageId>
+    <Title>KernelSharp — Write CUDA Kernels in C#</Title>
+    <Description>
+      Write CUDA C/C++ kernels inline inside C# source files using raw string literals, annotate
+      a partial method with [GpuKernel], and let the Roslyn source generator invoke nvcc at build
+      time. The resulting multi-arch fatbinary is embedded directly in your assembly — no separate
+      .ptx files, no CUDA Runtime API, no manual P/Invoke.  Supports strongly-typed CudaBuffer&lt;T&gt;
+      device pointers, parallel multi-kernel compilation, gzip-compressed fatbin embedding, and
+      zero-configuration GPU detection at runtime via the CUDA Driver API.
+    </Description>
+    <PackageTags>cuda;gpu;kernels;nvcc;roslyn;sourcegenerator;hpc;ai;llm;dotnet;csharp;device;parallel</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/csizmadiatibor/KernelSharp</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- README ends up in the NuGet package root -->
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <!-- Wire in the source generator so any project referencing KernelSharp
+         automatically gets CUDA kernel compilation at build time. -->
+    <ProjectReference Include="..\KernelSharp.SourceGenerator\KernelSharp.SourceGenerator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

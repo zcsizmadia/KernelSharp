@@ -23,6 +23,10 @@ jobs:
             label: "VS 18 2026"
             cuda: "12.9.1"
 
+          - os: windows-2025
+            label: "VS 17 2022"
+            cuda: "13.2.0"
+
           - os: windows-2025-vs2026
             label: "VS 18 2026"
             cuda: "13.2.0"
@@ -60,11 +64,6 @@ jobs:
           dotnet build -c Release --no-restore
 
       - name: Test
-        shell: bash
-        run: |
-          dotnet test -c Release --no-build
-
-      - name: Pack
         shell: bash
         run: |
           dotnet test -c Release --no-build

@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install CUDA Toolkit ${{ matrix.cuda }}
         uses: Jimver/cuda-toolkit@v0.2.35
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload NuGet packages
         if: matrix.pack == true
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: nupkgs
           path: ./nupkgs

@@ -15,24 +15,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Visual Studio 17 2022
-          - os: windows-2022
+          - os: windows-2025
+            label: "VS 17 2022"
             cuda: "13.2.0"
 
-          # Visual Studio 18 2026
           - os: windows-2025-vs2026
+            label: "VS 18 2026"
             cuda: "13.2.0"
 
           # Linux
           - os: ubuntu-latest
+            label: "Linux gcc"
             cuda: "13.2.0"
             pack: true # This job will be responsible for packing and uploading the NuGet packages
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Install CUDA Toolkit ${{ matrix.cuda }}
         uses: Jimver/cuda-toolkit@v0.2.35
@@ -41,6 +40,13 @@ jobs:
           cuda: ${{ matrix.cuda }}
           method: network
           use-github-cache: true
+
+      - name: Dump info
+        shell: bash
+        run: |
+          echo "CUDA Version: ${{ steps.cuda-toolkit.outputs.version }}"
+          echo "CUDA Path: ${{ steps.cuda-toolkit.outputs.path }}"
+          printenv
 
       - name: Build
         shell: bash

@@ -395,7 +395,10 @@ public sealed class GpuKernelGenerator : IIncrementalGenerator
         string effectiveInc, string[] archs,
         string nvcc, string clDir)
     {
-        string tempDir = Path.Combine(Path.GetTempPath(), "KernelSharpGen");
+        // Use a unique subdirectory per invocation to avoid file collisions when multiple
+        // tests (or parallel generator runs) compile kernels with the same method name.
+        string tempDir = Path.Combine(Path.GetTempPath(), "KernelSharpGen",
+            $"{model.MethodName}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
         string srcFile = Path.Combine(tempDir, $"{model.MethodName}.cu");
         string fatbinFile = Path.Combine(tempDir, $"{model.MethodName}.fatbin");
@@ -480,8 +483,11 @@ public sealed class GpuKernelGenerator : IIncrementalGenerator
         };
         var proc = new Process { StartInfo = psi };
         if (!proc.Start())
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
             return (null, string.Empty, Diagnostic.Create(Diagnostics.NvccFailed, Location.None,
                 model.MethodName, "Could not start nvcc"));
+        }
 
         string stderr = proc.StandardError.ReadToEnd();
         string stdout = proc.StandardOutput.ReadToEnd();
@@ -492,11 +498,14 @@ public sealed class GpuKernelGenerator : IIncrementalGenerator
         if (exitCode != 0)
         {
             string combined = (stderr + stdout).Trim();
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
             return (null, string.Empty, Diagnostic.Create(Diagnostics.NvccFailed, Location.None,
                 model.MethodName, combined));
         }
 
-        return (File.Exists(fatbinFile) ? File.ReadAllBytes(fatbinFile) : null, cleanArgs, null);
+        byte[]? fatbinBytes = File.Exists(fatbinFile) ? File.ReadAllBytes(fatbinFile) : null;
+        try { Directory.Delete(tempDir, recursive: true); } catch { }
+        return (fatbinBytes, cleanArgs, null);
     }
 
     // ── Compiler version info ─────────────────────────────────────────────────────────────

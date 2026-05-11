@@ -217,6 +217,14 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         {
             var r = results[i];
 
+            // Always log the nvcc command when available: at Normal on failure (so it
+            // appears without raising verbosity), at verboseImportance on success.
+            if (!string.IsNullOrEmpty(r.NvccArgs))
+            {
+                MessageImportance cmdImportance = r.Error != null ? MessageImportance.Normal : verboseImportance;
+                Log.LogCommandLine(cmdImportance, $"nvcc {r.NvccArgs}");
+            }
+
             if (r.Error != null)
             {
                 Log.LogError(null, "KERNELSHARP002", null, r.Kernel.SourceFilePath, 0, 0, 0, 0,
@@ -230,12 +238,6 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
                     : " — nvcc skipped (not found)";
                 Log.LogMessage(MessageImportance.Normal,
                     $"KernelSharp:   {r.Kernel.ClassName}.{r.Kernel.MethodName}{detail}");
-
-                // Log the exact nvcc command; importance is controlled by KernelSharpVerbosity
-                if (!string.IsNullOrEmpty(r.NvccArgs))
-                {
-                    Log.LogCommandLine(verboseImportance, $"nvcc {r.NvccArgs}");
-                }
             }
 
             string genPath = Path.Combine(outDir, $"{r.Kernel.ClassName}.{r.Kernel.MethodName}.g.cs");

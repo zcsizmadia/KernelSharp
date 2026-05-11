@@ -87,7 +87,7 @@ jobs:
         shell: bash
         run: |
           dotnet restore
-          dotnet build -c Release --no-restore -v n -p:KernelSharpNvccExtraFlags="${{ matrix.nvcc_extra_flags }}" -p:KernelSharpVerbosity=detailed
+          dotnet build -c Release --no-restore -p:KernelSharpNvccExtraFlags="${{ matrix.nvcc_extra_flags }}" -p:KernelSharpVerbosity=detailed
 
       - name: Test
         shell: bash

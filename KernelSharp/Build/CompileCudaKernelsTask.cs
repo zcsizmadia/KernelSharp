@@ -228,7 +228,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
             if (r.Error != null)
             {
                 Log.LogError(null, "KERNELSHARP002", null, r.Kernel.SourceFilePath, 0, 0, 0, 0,
-                    $"KernelSharp: nvcc failed for '{r.Kernel.ClassName}.{r.Kernel.MethodName}': {r.Error}");
+                    $"KernelSharp: nvcc {r.NvccArgs} failed for '{r.Kernel.ClassName}.{r.Kernel.MethodName}': {r.Error}");
                 success = false;
             }
             else

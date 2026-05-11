@@ -10,7 +10,6 @@ jobs:
   build:
     name: "CUDA ${{ matrix.cuda }} / ${{ matrix.label }}"
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
 
     strategy:
       fail-fast: false
@@ -29,15 +28,13 @@ jobs:
             cuda: "13.2.0"
             pack: true # This job will be responsible for packing and uploading the NuGet packages
 
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             label: "Linux GCC"
             cuda: "12.9.1"
-            container: nvidia/cuda:12.9.1-devel-ubuntu22.04
 
           - os: ubuntu-latest
             label: "Linux GCC"
             cuda: "13.2.0"
-            container: nvidia/cuda:13.2.0-devel-ubuntu24.04
 
     steps:
       - name: Checkout repository
@@ -47,7 +44,6 @@ jobs:
       - name: Install CUDA Toolkit ${{ matrix.cuda }}
         uses: Jimver/cuda-toolkit@v0.2.35
         id: cuda-toolkit
-        if: runner.os == 'Windows'
         with:
           cuda: ${{ matrix.cuda }}
           method: network

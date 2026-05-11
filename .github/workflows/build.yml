@@ -29,12 +29,24 @@ jobs:
             pack: true # This job will be responsible for packing and uploading the NuGet packages
 
           - os: ubuntu-22.04
-            label: "Linux GCC"
+            label: "Linux GCC 11"
             cuda: "12.9.1"
 
           - os: ubuntu-latest
-            label: "Linux GCC"
+            label: "Linux GCC 13"
             cuda: "13.2.0"
+
+          - os: ubuntu-22.04
+            label: "Linux Clang 14"
+            cuda: "12.9.1"
+            clang_version: "14"
+            nvcc_extra_flags: "-ccbin clang++-14"
+
+          - os: ubuntu-latest
+            label: "Linux Clang 18"
+            cuda: "13.2.0"
+            clang_version: "18"
+            nvcc_extra_flags: "-ccbin clang++-18"
 
     steps:
       - name: Checkout repository
@@ -50,6 +62,14 @@ jobs:
           sub-packages: '["nvcc", "cudart"]'
           use-github-cache: true
 
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Clang ${{ matrix.clang_version }}
+        if: runner.os == 'Linux' && matrix.clang_version != ''
+        run: sudo apt-get install -y clang-${{ matrix.clang_version }}
+
       # Set up .NET SDKs
       - name: Install .NET SDKs
         uses: actions/setup-dotnet@v5
@@ -63,7 +83,7 @@ jobs:
         shell: bash
         run: |
           dotnet restore
-          dotnet build -c Release --no-restore
+          dotnet build -c Release --no-restore -p:KernelSharpNvccExtraFlags="${{ matrix.nvcc_extra_flags }}"
 
       - name: Test
         shell: bash

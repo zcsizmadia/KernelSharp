@@ -5,8 +5,8 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
-  <ItemGroup>
+  <!-- <ItemGroup>
     <PackageReference Include="KernelSharp.Net" Version="$(Version)" />
-  </ItemGroup>
+  </ItemGroup> -->
 
 </Project>

@@ -62,7 +62,7 @@ jobs:
           sub-packages: >-
             ${{ runner.os != 'Windows'
                 && '["nvcc", "cudart"]'
-                || ''
+                || '[]'
             }}
           use-github-cache: true
 

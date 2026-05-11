@@ -10,7 +10,7 @@
 
   <!-- Import the KernelSharp MSBuild task for local project-reference builds.
        NuGet consumers get this auto-imported from the package's build/ folder. -->
-  <Import Project="../KernelSharp/build/KernelSharp.targets" />
+  <Import Project="../KernelSharp/Build/KernelSharp.targets" />
 
   <ItemGroup>
     <ProjectReference Include="..\KernelSharp\KernelSharp.csproj" />

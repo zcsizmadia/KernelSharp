@@ -19,10 +19,6 @@ jobs:
             label: "VS 17 2022"
             cuda: "12.9.1"
 
-          - os: windows-2025-vs2026
-            label: "VS 18 2026"
-            cuda: "12.9.1"
-
           - os: windows-2025
             label: "VS 17 2022"
             cuda: "13.2.0"

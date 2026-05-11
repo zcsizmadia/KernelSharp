@@ -601,20 +601,17 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
             sb.Append($"{k.ExtraFlags} ");
         }
 
-        // Record clean args (no -ccbin path, no file paths) for the generated file comment
-        string rawArgs = sb.ToString();
-        string cleanArgs = (!string.IsNullOrEmpty(ccbinPrefix)
-            ? rawArgs.Replace(ccbinPrefix, string.Empty, StringComparison.Ordinal)
-            : rawArgs).Trim();
 
         sb.Append($"\"{srcFile}\" -o \"{fatbinFile}\"");
+
+        var nvccArgs = sb.ToString();
 
         var proc = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = nvcc,
-                Arguments = sb.ToString(),
+                Arguments = nvccArgs,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -625,7 +622,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         if (!proc.Start())
         {
             TryDelete(tempDir);
-            return new KernelResult(k, null, string.Empty, "Could not start nvcc process.");
+            return new KernelResult(k, null, nvccArgs, "Could not start nvcc process.");
         }
 
         _activeProcesses.TryAdd(proc.Id, proc);
@@ -652,7 +649,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
 
                 _activeProcesses.TryRemove(proc.Id, out _);
                 TryDelete(tempDir);
-                return new KernelResult(k, null, string.Empty, "Compilation cancelled.");
+                return new KernelResult(k, null, nvccArgs, "Compilation cancelled.");
             }
         }
 
@@ -663,12 +660,12 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         if (exitCode != 0)
         {
             TryDelete(tempDir);
-            return new KernelResult(k, null, string.Empty, (stderr + stdout).Trim());
+            return new KernelResult(k, null, nvccArgs, (stderr + stdout).Trim());
         }
 
         byte[]? fatbin = File.Exists(fatbinFile) ? File.ReadAllBytes(fatbinFile) : null;
         TryDelete(tempDir);
-        return new KernelResult(k, fatbin, cleanArgs, null);
+        return new KernelResult(k, fatbin, nvccArgs, null);
     }
 
     private static void TryDelete(string dir) { try { Directory.Delete(dir, recursive: true); } catch { } }

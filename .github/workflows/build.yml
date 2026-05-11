@@ -59,7 +59,7 @@ jobs:
         with:
           cuda: ${{ matrix.cuda }}
           method: network
-          sub-packages: '["nvcc", "cudart"]'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
           use-github-cache: true
 
       # # Set up the MSVC Developer Command Prompt on Windows so that cl.exe can

@@ -62,10 +62,6 @@ jobs:
           sub-packages: '["nvcc", "cudart"]'
           use-github-cache: true
 
-      - name: Set up MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Install Clang ${{ matrix.clang_version }}
         if: runner.os == 'Linux' && matrix.clang_version != ''
         run: sudo apt-get install -y clang-${{ matrix.clang_version }}

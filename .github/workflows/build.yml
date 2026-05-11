@@ -97,15 +97,15 @@ jobs:
         run: |
           dotnet pack -c Release --no-build -o ./nupkgs
 
-      - name: Validate nupkg
-        if: matrix.pack == true
-        shell: bash
-        run: |
-          dotnet build -c Release NupkgValidator/NupkgValidator.csproj
-
       - name: Upload NuGet packages
         if: matrix.pack == true
         uses: actions/upload-artifact@v7
         with:
           name: nupkgs
           path: ./nupkgs
+
+      - name: Validate nupkg
+        if: matrix.pack == true
+        shell: bash
+        run: |
+          dotnet build -c Release NupkgValidator/NupkgValidator.csproj

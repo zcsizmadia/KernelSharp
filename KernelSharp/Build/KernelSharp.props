@@ -55,6 +55,12 @@
          than the source (.cs) file, so incremental builds remain efficient.
          Example: <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath> -->
     <KernelSharpGeneratedOutputPath Condition="'$(KernelSharpGeneratedOutputPath)' == ''"></KernelSharpGeneratedOutputPath>
+    <!-- Verbosity level for KernelSharp build messages: "normal" (default) or "detailed".
+         "detailed" shows nvcc command lines and up-to-date skips at Normal importance,
+         so you can diagnose kernel compilation without raising the whole build verbosity.
+         Example: <KernelSharpVerbosity>detailed</KernelSharpVerbosity> -->
+    <KernelSharpVerbosity Condition="'$(KernelSharpVerbosity)' == ''">normal</KernelSharpVerbosity>
+
   </PropertyGroup>
 
 </Project>

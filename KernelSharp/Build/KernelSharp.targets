@@ -48,7 +48,8 @@
         MaxParallelism="$(KernelSharpMaxParallelism)"
         FatbinCompression="$(KernelSharpFatbinCompression)"
         IntermediateOutputPath="$(IntermediateOutputPath)"
-        GeneratedOutputPath="$(KernelSharpGeneratedOutputPath)">
+        GeneratedOutputPath="$(KernelSharpGeneratedOutputPath)"
+        Verbosity="$(KernelSharpVerbosity)">
       <Output TaskParameter="GeneratedFiles" ItemName="Compile" />
     </KernelSharp.Build.CompileCudaKernelsTask>
 

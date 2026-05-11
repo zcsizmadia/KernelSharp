@@ -86,6 +86,13 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
     /// <summary>Max parallel nvcc processes. Empty = all CPU cores.</summary>
     public string MaxParallelism { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Verbosity level for KernelSharp messages: "normal" (default) or "detailed".
+    /// "detailed" promotes nvcc command lines and up-to-date skips to Normal importance
+    /// so they appear without having to raise the overall MSBuild verbosity.
+    /// </summary>
+    public string Verbosity { get; set; } = "normal";
+
     /// <summary>Fatbin embedding compression: "gzip" (default) or "none".</summary>
     public string FatbinCompression { get; set; } = "gzip";
 
@@ -142,13 +149,16 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         var toCompile = new List<KernelInfo>();
         var upToDatePaths = new List<string>();
 
+        bool isDetailed = string.Equals(Verbosity, "detailed", StringComparison.OrdinalIgnoreCase);
+        MessageImportance verboseImportance = isDetailed ? MessageImportance.Normal : MessageImportance.Low;
+
         foreach (var k in kernels)
         {
             string genPath = Path.Combine(outDir, $"{k.ClassName}.{k.MethodName}.g.cs");
             if (!k.NotImplemented && IsUpToDate(k.SourceFilePath, genPath) && !IsStubFile(genPath))
             {
                 upToDatePaths.Add(genPath);
-                Log.LogMessage(MessageImportance.Low,
+                Log.LogMessage(verboseImportance,
                     $"KernelSharp:   {k.ClassName}.{k.MethodName} — up-to-date, skipping nvcc.");
             }
             else
@@ -221,10 +231,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
                 Log.LogMessage(MessageImportance.Normal,
                     $"KernelSharp:   {r.Kernel.ClassName}.{r.Kernel.MethodName}{detail}");
 
-                // Log the exact nvcc command at Low importance (visible at -v:detailed only)
+                // Log the exact nvcc command; importance is controlled by KernelSharpVerbosity
                 if (!string.IsNullOrEmpty(r.NvccArgs))
                 {
-                    Log.LogCommandLine(MessageImportance.Low, $"nvcc {r.NvccArgs}");
+                    Log.LogCommandLine(verboseImportance, $"nvcc {r.NvccArgs}");
                 }
             }
 
@@ -548,6 +558,11 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         sb.Append($"-x cu -std={std} --extended-lambda --use_fast_math ");
 
         string cudaRoot = GetCudaRoot(nvcc);
+        if (string.IsNullOrEmpty(cudaRoot))
+        {
+            cudaRoot = Environment.GetEnvironmentVariable("CUDA_PATH") ?? string.Empty;
+        }
+
         if (!string.IsNullOrWhiteSpace(effectiveInc))
         {
             string inc = effectiveInc.TrimEnd('\\', '/');

@@ -1,0 +1,63 @@
+<Project>
+
+  <!-- ── KernelSharp build settings ──────────────────────────────────────────
+       When installed as a NuGet package this file is auto-imported into every
+       consuming project.  Override any property before this file is imported —
+       the Condition="" guards ensure your values are never overwritten.
+       When used via a local <ProjectReference>, import KernelSharp.targets
+       (which imports this file automatically).                               -->
+
+  <PropertyGroup>
+    <!-- Path to the CUDA include directory (contains cuda.h, cuda_runtime.h …).
+         Auto-detected from CUDA_PATH / nvcc location when left empty.
+         Example: <KernelSharpIncludePath>C:\cuda\include</KernelSharpIncludePath> -->
+    <KernelSharpIncludePath Condition="'$(KernelSharpIncludePath)' == ''"></KernelSharpIncludePath>
+
+    <!-- C++ standard passed to nvcc.  c++20 is the default and recommended.
+         Example: <KernelSharpNvccStd>c++17</KernelSharpNvccStd> -->
+    <KernelSharpNvccStd Condition="'$(KernelSharpNvccStd)' == ''">c++20</KernelSharpNvccStd>
+
+    <!-- Explicit CCCL (Thrust / libcudacxx / CUB) root directory.
+         Auto-detected from CUDA_PATH/include/cccl (bundled since CUDA 12.4).
+         Example: <KernelSharpCCCLPath>D:\libs\cccl</KernelSharpCCCLPath> -->
+    <KernelSharpCCCLPath Condition="'$(KernelSharpCCCLPath)' == ''"></KernelSharpCCCLPath>
+
+    <!-- Extra nvcc flags appended to every kernel compilation in this project.
+         Per-kernel overrides go in [GpuKernel(ExtraFlags = "…")].
+         Example: <KernelSharpNvccExtraFlags>-lineinfo</KernelSharpNvccExtraFlags> -->
+    <KernelSharpNvccExtraFlags Condition="'$(KernelSharpNvccExtraFlags)' == ''"></KernelSharpNvccExtraFlags>
+
+    <!-- Windows only: path to cl.exe used as nvcc host compiler.
+         Auto-detected via vswhere, VCToolsInstallDir env var, or PATH.
+         Example: <KernelSharpMsvcClPath>C:\VS\VC\Tools\MSVC\14.x\bin\HostX64\x64\cl.exe</KernelSharpMsvcClPath> -->
+    <KernelSharpMsvcClPath Condition="'$(KernelSharpMsvcClPath)' == ''"></KernelSharpMsvcClPath>
+
+    <!-- Comma-separated GPU architectures to embed SASS + PTX for.
+           compute_80 = Ampere  (A100 / RTX 30xx, 2020+)
+           compute_89 = Ada     (RTX 40xx, 2022+)
+           compute_90 = Hopper  (H100, 2022+)
+         For faster debug builds, restrict to one arch:
+           <KernelSharpTargetArchs>compute_89</KernelSharpTargetArchs> -->
+    <KernelSharpTargetArchs Condition="'$(KernelSharpTargetArchs)' == ''">compute_80,compute_89,compute_90</KernelSharpTargetArchs>
+
+    <!-- Maximum parallel nvcc processes during build.
+         Empty (default) = all available CPU cores.
+         Set to 1 to serialise compilation when diagnosing nvcc errors.
+         Example: <KernelSharpMaxParallelism>4</KernelSharpMaxParallelism> -->
+    <KernelSharpMaxParallelism Condition="'$(KernelSharpMaxParallelism)' == ''"></KernelSharpMaxParallelism>
+
+    <!-- Compression applied to the embedded fatbin byte array.
+           none           = raw bytes embedded as base64.
+           gzip (default) = compressed at build time, decompressed on first kernel call.
+         Example: <KernelSharpFatbinCompression>none</KernelSharpFatbinCompression> -->
+    <KernelSharpFatbinCompression Condition="'$(KernelSharpFatbinCompression)' == ''">gzip</KernelSharpFatbinCompression>
+
+    <!-- Optional: write generated .g.cs files to this folder instead of $(IntermediateOutputPath).
+         Commit this folder to source control so build machines without nvcc can compile
+         from pre-built launchers.  nvcc is still skipped when the generated file is newer
+         than the source (.cs) file, so incremental builds remain efficient.
+         Example: <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath> -->
+    <KernelSharpGeneratedOutputPath Condition="'$(KernelSharpGeneratedOutputPath)' == ''"></KernelSharpGeneratedOutputPath>
+  </PropertyGroup>
+
+</Project>

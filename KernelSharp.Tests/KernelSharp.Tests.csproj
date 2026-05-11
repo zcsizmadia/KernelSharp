@@ -13,12 +13,13 @@
     <PackageReference Include="TUnit.Assertions" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build.Framework"        PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core"  PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\KernelSharp\KernelSharp.csproj" />
-    <ProjectReference Include="..\KernelSharp.SourceGenerator\KernelSharp.SourceGenerator.csproj" />
     <ProjectReference Include="..\KernelSharp.Samples\KernelSharp.Samples.csproj" />
   </ItemGroup>
 

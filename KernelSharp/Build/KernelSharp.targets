@@ -1,0 +1,56 @@
+<Project>
+
+  <!-- Import default property values defined in KernelSharp.props.
+       When consumed as a NuGet package both files are auto-imported independently.
+       When used via a local <ProjectReference> only this .targets file is imported
+       explicitly, so we pull in the props here to guarantee they are set first.  -->
+  <Import Project="$(MSBuildThisFileDirectory)KernelSharp.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)KernelSharp.props')" />
+
+  <!-- ── Task assembly resolution ────────────────────────────────────────────
+       Two scenarios:
+         NuGet package  — KernelSharp.dll is placed alongside this .targets file
+                          in the package's build/ folder.
+         Local project  — KernelSharp.dll lives in bin/$(Configuration)/net10.0/
+                          relative to the KernelSharp project folder.             -->
+  <PropertyGroup>
+    <!-- NuGet package scenario: DLL sits next to this .targets file -->
+    <_KernelSharpBuildAssembly
+        Condition="'$(_KernelSharpBuildAssembly)' == '' And Exists('$(MSBuildThisFileDirectory)KernelSharp.dll')"
+    >$(MSBuildThisFileDirectory)KernelSharp.dll</_KernelSharpBuildAssembly>
+
+    <!-- Local project-reference scenario: DLL is in the build output folder -->
+    <_KernelSharpBuildAssembly
+        Condition="'$(_KernelSharpBuildAssembly)' == ''"
+    >$(MSBuildThisFileDirectory)..\bin\$(Configuration)\net10.0\KernelSharp.dll</_KernelSharpBuildAssembly>
+  </PropertyGroup>
+
+  <UsingTask
+    TaskName="KernelSharp.Build.CompileCudaKernelsTask"
+    AssemblyFile="$(_KernelSharpBuildAssembly)" />
+
+  <!-- ── CompileCudaKernels target ────────────────────────────────────────────
+       Runs before CoreCompile so the generated .cs files are visible to Roslyn.
+       The Output element adds each generated file to @(Compile) automatically. -->
+  <Target Name="KernelSharp_CompileCudaKernels"
+          BeforeTargets="CoreCompile"
+          Condition="'@(Compile)' != ''">
+
+    <KernelSharp.Build.CompileCudaKernelsTask
+        CompileItems="@(Compile)"
+        IncludePath="$(KernelSharpIncludePath)"
+        NvccStd="$(KernelSharpNvccStd)"
+        CcclPath="$(KernelSharpCCCLPath)"
+        NvccExtraFlags="$(KernelSharpNvccExtraFlags)"
+        MsvcClPath="$(KernelSharpMsvcClPath)"
+        TargetArchs="$(KernelSharpTargetArchs)"
+        MaxParallelism="$(KernelSharpMaxParallelism)"
+        FatbinCompression="$(KernelSharpFatbinCompression)"
+        IntermediateOutputPath="$(IntermediateOutputPath)"
+        GeneratedOutputPath="$(KernelSharpGeneratedOutputPath)">
+      <Output TaskParameter="GeneratedFiles" ItemName="Compile" />
+    </KernelSharp.Build.CompileCudaKernelsTask>
+
+  </Target>
+
+</Project>

@@ -1,6 +1,5 @@
 <Solution>
   <Project Path="KernelSharp/KernelSharp.csproj" />
-  <Project Path="KernelSharp.SourceGenerator/KernelSharp.SourceGenerator.csproj" />
   <Project Path="KernelSharp.Samples/KernelSharp.Samples.csproj" />
   <Project Path="KernelSharp.Tests/KernelSharp.Tests.csproj" />
 </Solution>

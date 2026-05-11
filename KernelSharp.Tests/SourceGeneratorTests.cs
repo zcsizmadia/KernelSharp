@@ -1,12 +1,12 @@
-﻿// Tests for the source generator itself – no GPU needed.
+﻿// Tests for the MSBuild task's code generation logic – no GPU needed.
 // Exercises: attribute recognition, fatbin field generation, namespace handling,
-// partial method wiring, diagnostics, nvcc path discovery.
+// partial method wiring, compression, multi-kernel output.
 
-using System.Reflection;
+using System.Collections.Generic;
+using System.Linq;
 
-using KernelSharp.SourceGenerator;
+using KernelSharp.Build;
 
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
 using TUnit.Assertions;
@@ -17,51 +17,26 @@ namespace KernelSharp.Tests;
 
 public class SourceGeneratorTests
 {
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helper ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Run the generator against <paramref name="source"/> and return all
-    /// generated syntax trees (excludes the input).
+    /// Parse <paramref name="source"/>, discover [GpuKernel] methods via the task's
+    /// syntactic Roslyn walk, and emit C# launcher source for each one.
+    /// No GPU or nvcc required.
     /// </summary>
-    private static (IReadOnlyList<Diagnostic> Diagnostics,
-                    IReadOnlyList<SyntaxTree> GeneratedTrees)
-        RunGenerator(string source)
+    private static List<string> GenerateSources(string source, string projectCompression = "gzip")
     {
-        var parseOptions = CSharpParseOptions.Default
-            .WithLanguageVersion(LanguageVersion.Latest);
-
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            [CSharpSyntaxTree.ParseText(source, parseOptions)],
-            GetMetadataReferences(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var generator = new GpuKernelGenerator();
-        var driver = CSharpGeneratorDriver
-            .Create(new IIncrementalGenerator[] { generator })
-            .RunGeneratorsAndUpdateCompilation(compilation,
-                out _, out var diagnostics);
-
-        // GetRunResult() is the canonical way to retrieve generator output
-        var result = driver.GetRunResult();
-        var generated = result.GeneratedTrees;
-
-        return (diagnostics, generated);
-    }
-
-    private static IEnumerable<MetadataReference> GetMetadataReferences()
-    {
-        // Include every trusted platform assembly loaded in this process so that
-        // Roslyn can resolve CudaBuffer<T>, IDisposable, Span<T>, etc.
-        // This is the canonical approach for in-process Roslyn generator tests on .NET 6+.
-        var trustedPaths = (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string)
-            ?? string.Empty;
-        foreach (string path in trustedPaths.Split(';', StringSplitOptions.RemoveEmptyEntries))
-            yield return MetadataReference.CreateFromFile(path);
-
-        // KernelSharp runtime (GpuKernelAttribute, CudaBuffer<T>, …)
-        yield return MetadataReference.CreateFromFile(
-            typeof(GpuKernelAttribute).Assembly.Location);
+        var tree = CSharpSyntaxTree.ParseText(source,
+            new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        return kernels
+            .Select(k => CompileCudaKernelsTask.BuildLauncherSource(
+                k, null,
+                CompileCudaKernelsTask.EffectiveCompression(k.Compression, projectCompression),
+                CompileCudaKernelsTask.CompilerInfo.Empty,
+                string.Empty))
+            .ToList();
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────
@@ -81,10 +56,10 @@ public class SourceGeneratorTests
                 }
             }
             """;
-        var (_, trees) = RunGenerator(src);
+        var files = GenerateSources(src);
 
-        await Assert.That(trees.Count).IsGreaterThan(0)
-            .Because("the generator must emit at least one file");
+        await Assert.That(files.Count).IsGreaterThan(0)
+            .Because("the task must emit at least one file");
     }
 
     [Test]
@@ -99,8 +74,8 @@ public class SourceGeneratorTests
                 public partial void MyKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         // The generated code must contain the fatbin field and the EnsureLoaded helper
         await Assert.That(generated).Contains("_MyKernel_fatbin");
@@ -119,8 +94,8 @@ public class SourceGeneratorTests
                 public partial void MyKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("cuModuleLoadData");
         await Assert.That(generated).Contains("cuModuleGetFunction");
@@ -137,8 +112,8 @@ public class SourceGeneratorTests
                 public partial void Bar(CudaBuffer<float> x);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("namespace Deep.Nested.Ns");
     }
@@ -153,8 +128,8 @@ public class SourceGeneratorTests
                 public partial void MyFancyKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("MyFancyKernel");
     }
@@ -165,16 +140,16 @@ public class SourceGeneratorTests
         const string src = """
             using KernelSharp;
             namespace Ns {
-                // Not marked partial – generator must skip this
+                // Not marked partial – task must skip this
                 public class NotPartial {
                     [GpuKernel("__global__ void K() {}", NotImplemented = true)]
                     public void K(CudaBuffer<float> b) { }
                 }
             }
             """;
-        var (_, trees) = RunGenerator(src);
+        var files = GenerateSources(src);
         // Nothing should be generated for a non-partial class
-        await Assert.That(trees.Count).IsEqualTo(0);
+        await Assert.That(files.Count).IsEqualTo(0);
     }
 
     [Test]
@@ -183,13 +158,13 @@ public class SourceGeneratorTests
         const string src = """
             using KernelSharp;
             namespace Ns { public partial class C {
-                // Not marked partial – generator must skip this method
+                // Not marked partial – task must skip this method
                 [GpuKernel("__global__ void K() {}", NotImplemented = true)]
                 public void K(CudaBuffer<float> b) { }
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        await Assert.That(trees.Count).IsEqualTo(0)
+        var files = GenerateSources(src);
+        await Assert.That(files.Count).IsEqualTo(0)
             .Because("non-partial methods are not kernel launch sites");
     }
 
@@ -205,8 +180,8 @@ public class SourceGeneratorTests
                 public partial void K2(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        await Assert.That(trees.Count).IsGreaterThanOrEqualTo(2);
+        var files = GenerateSources(src);
+        await Assert.That(files.Count).IsGreaterThanOrEqualTo(2);
     }
 
     [Test]
@@ -220,8 +195,8 @@ public class SourceGeneratorTests
                 public partial void Add(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> c);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         // The generated partial method must extract DevicePointer for each CudaBuffer param
         await Assert.That(generated).Contains("a.DevicePointer");
@@ -241,8 +216,8 @@ public class SourceGeneratorTests
                 public partial void K(CudaBuffer<float> b);
             }
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("namespace Ns");
     }
@@ -261,17 +236,16 @@ public class SourceGeneratorTests
                 public partial void MyKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("_MyKernel_compression");
     }
 
     [Test]
-    public async Task Generator_EmitsCompressionNone_ByDefault()
+    public async Task Generator_EmitsCompressionGzip_ByDefault()
     {
-        // When no Compression attribute arg is provided, the project default applies.
-        // In the test environment there's no MSBuild context, so the default is "none".
+        // When no Compression attribute arg is provided, the project default ("gzip") applies.
         const string src = """
             using KernelSharp;
             namespace Ns { public partial class K {
@@ -279,8 +253,26 @@ public class SourceGeneratorTests
                 public partial void NoCompKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
+
+        await Assert.That(generated).Contains("_NoCompKernel_compression = \"gzip\"");
+    }
+
+    [Test]
+    public async Task Generator_EmitsCompressionNone_WhenAttributeSpecifiesNone()
+    {
+        // When Compression = "none" is set on the attribute, the generated constant
+        // must reflect that so the loader does not apply decompression.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void NoCompKernel(float* b, int n) {}", Compression = "none")]
+                public partial void NoCompKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("_NoCompKernel_compression = \"none\"");
     }
@@ -297,8 +289,8 @@ public class SourceGeneratorTests
                 public partial void GzipKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("_GzipKernel_compression = \"gzip\"");
     }
@@ -315,8 +307,8 @@ public class SourceGeneratorTests
                 public partial void MyKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("_MyKernel_DecodeFatbin");
         await Assert.That(generated).Contains("_MyKernel_fatbin_encoded");
@@ -334,8 +326,8 @@ public class SourceGeneratorTests
                 public partial void MyKernel(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
-        string generated = string.Concat(trees.Select(t => t.ToString()));
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
 
         await Assert.That(generated).Contains("_MyKernel_fatbin = _MyKernel_DecodeFatbin()");
     }
@@ -343,22 +335,22 @@ public class SourceGeneratorTests
     [Test]
     public async Task Generator_CompressionOverride_DoesNotAffectOtherKernels()
     {
-        // When two kernels share the same class but only one has Compression = "gzip",
+        // When two kernels share the same class but have different Compression values,
         // each must carry its own independent compression constant.
         const string src = """
             using KernelSharp;
             namespace Ns { public partial class M {
-                [GpuKernel("extern \"C\" __global__ void KernelA(float* b, int n) {}")]
+                [GpuKernel("extern \"C\" __global__ void KernelA(float* b, int n) {}", Compression = "none")]
                 public partial void KernelA(CudaBuffer<float> b);
                 [GpuKernel("extern \"C\" __global__ void KernelB(float* b, int n) {}", Compression = "gzip")]
                 public partial void KernelB(CudaBuffer<float> b);
             }}
             """;
-        var (_, trees) = RunGenerator(src);
+        var files = GenerateSources(src);
 
         // Each kernel gets its own file — check them individually
-        string? fileA = trees.Select(t => t.ToString()).FirstOrDefault(s => s.Contains("_KernelA_compression"));
-        string? fileB = trees.Select(t => t.ToString()).FirstOrDefault(s => s.Contains("_KernelB_compression"));
+        string? fileA = files.FirstOrDefault(s => s.Contains("_KernelA_compression"));
+        string? fileB = files.FirstOrDefault(s => s.Contains("_KernelB_compression"));
 
         await Assert.That(fileA).IsNotNull();
         await Assert.That(fileB).IsNotNull();

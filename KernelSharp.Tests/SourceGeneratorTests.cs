@@ -298,8 +298,8 @@ public class SourceGeneratorTests
     [Test]
     public async Task Generator_EmitsDecodeFatbin_InGeneratedFile()
     {
-        // The generated code must always contain the unified decode helper
-        // so that the fatbin is decoded using the stored compression constant.
+        // The generated code must use FatbinHelper.Decode so the fatbin is
+        // decoded via the shared helper rather than per-kernel inline code.
         const string src = """
             using KernelSharp;
             namespace Ns { public partial class K {
@@ -310,15 +310,15 @@ public class SourceGeneratorTests
         var files = GenerateSources(src);
         string generated = string.Concat(files);
 
-        await Assert.That(generated).Contains("_MyKernel_DecodeFatbin");
+        await Assert.That(generated).Contains("FatbinHelper.Decode");
         await Assert.That(generated).Contains("_MyKernel_fatbin_encoded");
     }
 
     [Test]
     public async Task Generator_EmitsFatbinField_ThatCallsDecodeFatbin()
     {
-        // The final _fatbin field must be initialised by calling _DecodeFatbin(),
-        // making the decode path deterministic and the generated file self-contained.
+        // The _fatbin field must be initialised by FatbinHelper.Decode so the
+        // decode path uses the shared helper and passes the compression constant.
         const string src = """
             using KernelSharp;
             namespace Ns { public partial class K {
@@ -329,7 +329,7 @@ public class SourceGeneratorTests
         var files = GenerateSources(src);
         string generated = string.Concat(files);
 
-        await Assert.That(generated).Contains("_MyKernel_fatbin = _MyKernel_DecodeFatbin()");
+        await Assert.That(generated).Contains("global::KernelSharp.FatbinHelper.Decode(_MyKernel_fatbin_encoded, _MyKernel_compression)");
     }
 
     [Test]

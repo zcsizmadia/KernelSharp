@@ -743,22 +743,9 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         sb.AppendLine();
 
         sb.AppendLine("#pragma warning disable CS0162 // Unreachable code — intentional: compression constant is baked in at build time");
-        sb.AppendLine($"    private static byte[] _{k.MethodName}_DecodeFatbin()");
-        sb.AppendLine("    {");
-        sb.AppendLine($"        if (_{k.MethodName}_compression == \"none\")");
-        sb.AppendLine($"            return _{k.MethodName}_fatbin_encoded;");
-        sb.AppendLine($"        using (var _ms = new global::System.IO.MemoryStream(_{k.MethodName}_fatbin_encoded))");
-        sb.AppendLine("        using (var _gz = new global::System.IO.Compression.GZipStream(");
-        sb.AppendLine("            _ms, global::System.IO.Compression.CompressionMode.Decompress))");
-        sb.AppendLine("        {");
-        sb.AppendLine("            var _out = new global::System.IO.MemoryStream();");
-        sb.AppendLine("            _gz.CopyTo(_out);");
-        sb.AppendLine("            return _out.ToArray();");
-        sb.AppendLine("        }");
-        sb.AppendLine("    }");
+        sb.AppendLine($"    private static readonly byte[] _{k.MethodName}_fatbin =");
+        sb.AppendLine($"        global::KernelSharp.FatbinHelper.Decode(_{k.MethodName}_fatbin_encoded, _{k.MethodName}_compression);");
         sb.AppendLine("#pragma warning restore CS0162");
-        sb.AppendLine();
-        sb.AppendLine($"    private static readonly byte[] _{k.MethodName}_fatbin = _{k.MethodName}_DecodeFatbin();");
         sb.AppendLine();
         sb.AppendLine($"    private static IntPtr _{k.MethodName}_module = IntPtr.Zero;");
         sb.AppendLine($"    private static IntPtr _{k.MethodName}_func   = IntPtr.Zero;");

@@ -8,6 +8,14 @@
        (which imports this file automatically).                               -->
 
   <PropertyGroup>
+    <!-- Sentinel that prevents KernelSharp.targets from importing this file a
+         second time when it has already been auto-imported by NuGet. -->
+    <_KernelSharpPropsImported>true</_KernelSharpPropsImported>
+
+    <!-- The generated .g.cs kernel launchers use unsafe pointer operations.
+         Enable unsafe code for every project that consumes KernelSharp. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
     <!-- Path to the CUDA include directory (contains cuda.h, cuda_runtime.h …).
          Auto-detected from CUDA_PATH / nvcc location when left empty.
          Example: <KernelSharpIncludePath>C:\cuda\include</KernelSharpIncludePath> -->

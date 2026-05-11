@@ -1,11 +1,14 @@
 <Project>
 
   <!-- Import default property values defined in KernelSharp.props.
-       When consumed as a NuGet package both files are auto-imported independently.
+       When consumed as a NuGet package both files are auto-imported independently
+       by NuGet's generated .props file, so we must not import again.
        When used via a local <ProjectReference> only this .targets file is imported
-       explicitly, so we pull in the props here to guarantee they are set first.  -->
+       explicitly, so we pull in the props here to guarantee they are set first.
+       The sentinel property _KernelSharpPropsImported is set by KernelSharp.props
+       and prevents double-import in the NuGet scenario.                        -->
   <Import Project="$(MSBuildThisFileDirectory)KernelSharp.props"
-          Condition="Exists('$(MSBuildThisFileDirectory)KernelSharp.props')" />
+          Condition="'$(_KernelSharpPropsImported)' == '' And Exists('$(MSBuildThisFileDirectory)KernelSharp.props')" />
 
   <!-- ── Task assembly resolution ────────────────────────────────────────────
        Two scenarios:

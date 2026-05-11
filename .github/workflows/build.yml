@@ -21,17 +21,20 @@ jobs:
 
           - os: windows-2025
             label: "VS 17 2022"
-            cuda: "13.2.0"
+            cuda: "13.2.1"
 
           - os: windows-2025-vs2026
             label: "VS 18 2026"
-            cuda: "13.2.0"
+            cuda: "13.2.1"
             pack: true # This job will be responsible for packing and uploading the NuGet packages
 
-          # Linux
           - os: ubuntu-latest
-            label: "Linux gcc"
-            cuda: "13.2.0"
+            label: "Linux GCC"
+            cuda: "12.9.1"
+
+          - os: ubuntu-latest
+            label: "Linux GCC"
+            cuda: "13.2.1"
 
     steps:
       - name: Checkout repository

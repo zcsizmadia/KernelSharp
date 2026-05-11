@@ -13,8 +13,8 @@
     <PackageReference Include="TUnit.Assertions" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Build.Framework"        PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Build.Utilities.Core"  PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build.Framework" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" />
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 

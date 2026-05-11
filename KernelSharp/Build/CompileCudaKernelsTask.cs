@@ -422,7 +422,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         if (!string.IsNullOrWhiteSpace(k.ExtraFlags))   sb.Append($"{k.ExtraFlags} ");
 
         // Record clean args (no -ccbin path, no file paths) for the generated file comment
-        string cleanArgs = sb.ToString().Replace(ccbinPrefix, string.Empty, StringComparison.Ordinal).Trim();
+        string rawArgs  = sb.ToString();
+        string cleanArgs = (!string.IsNullOrEmpty(ccbinPrefix)
+            ? rawArgs.Replace(ccbinPrefix, string.Empty, StringComparison.Ordinal)
+            : rawArgs).Trim();
 
         sb.Append($"\"{srcFile}\" -o \"{fatbinFile}\"");
 

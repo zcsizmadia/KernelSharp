@@ -31,10 +31,12 @@ jobs:
           - os: ubuntu-latest
             label: "Linux GCC"
             cuda: "12.9.1"
+            container: nvidia/cuda:12.9.1-devel-ubuntu22.04
 
           - os: ubuntu-latest
             label: "Linux GCC"
             cuda: "13.2.0"
+            container: nvidia/cuda:13.2.0-devel-ubuntu24.04
 
     steps:
       - name: Checkout repository
@@ -43,16 +45,11 @@ jobs:
       - name: Install CUDA Toolkit ${{ matrix.cuda }}
         uses: Jimver/cuda-toolkit@v0.2.35
         id: cuda-toolkit
+        if: runner.os == 'Windows'
         with:
           cuda: ${{ matrix.cuda }}
           method: network
           use-github-cache: true
-
-      - name: Dump info
-        shell: bash
-        run: |
-          nvcc --version
-          printenv
 
       - name: Install .NET SDKs
         uses: actions/setup-dotnet@v5
@@ -66,7 +63,7 @@ jobs:
         shell: bash
         run: |
           dotnet restore
-          dotnet build -c Release --no-restore -v normal
+          dotnet build -c Release --no-restore
 
       - name: Test
         shell: bash

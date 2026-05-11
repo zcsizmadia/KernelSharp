@@ -87,19 +87,19 @@ jobs:
         shell: bash
         run: |
           dotnet restore -p:Platform="Any CPU"
-          dotnet build -c Release --no-restore -p:Platform="Any CPU" -p:KernelSharpNvccExtraFlags="${{ matrix.nvcc_extra_flags }}"
+          dotnet build -c Release --no-restore -p:KernelSharpNvccExtraFlags="${{ matrix.nvcc_extra_flags }}" -p:KernelSharpVerbosity=detailed
 
       - name: Test
         shell: bash
         run: |
-          dotnet test -c Release --no-build -p:Platform="Any CPU"
+          dotnet test -c Release --no-build
   
       - name: Pack
         if: matrix.pack == true
         shell: bash
         run: |
           dotnet restore -p:Platform="Any CPU"
-          dotnet pack -c Release --no-build -p:Platform="Any CPU" -o ./nupkgs
+          dotnet pack -c Release --no-build -o ./nupkgs
 
       - name: Upload NuGet packages
         if: matrix.pack == true

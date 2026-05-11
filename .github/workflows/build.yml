@@ -62,13 +62,13 @@ jobs:
           sub-packages: '["nvcc", "cudart"]'
           use-github-cache: true
 
-      # Set up the MSVC Developer Command Prompt on Windows so that cl.exe can
-      # find its own CRT headers (INCLUDE/LIB env vars) when used as nvcc's
-      # host compiler. This is a no-op on Linux.
-      - name: Set up MSVC Developer environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+      # # Set up the MSVC Developer Command Prompt on Windows so that cl.exe can
+      # # find its own CRT headers (INCLUDE/LIB env vars) when used as nvcc's
+      # # host compiler. This is a no-op on Linux.
+      # - name: Set up MSVC Developer environment
+      #   uses: ilammy/msvc-dev-cmd@v1
+      #   with:
+      #     arch: x64
 
       - name: Install Clang ${{ matrix.clang_version }}
         if: runner.os == 'Linux' && matrix.clang_version != ''

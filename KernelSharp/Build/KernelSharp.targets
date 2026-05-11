@@ -27,7 +27,9 @@
 
   <UsingTask
     TaskName="KernelSharp.Build.CompileCudaKernelsTask"
-    AssemblyFile="$(_KernelSharpBuildAssembly)" />
+    AssemblyFile="$(_KernelSharpBuildAssembly)"
+    Runtime="NET"
+    Architecture="x64" />
 
   <!-- ── CompileCudaKernels target ────────────────────────────────────────────
        Runs before CoreCompile so the generated .cs files are visible to Roslyn.

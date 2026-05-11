@@ -47,6 +47,7 @@ jobs:
         with:
           cuda: ${{ matrix.cuda }}
           method: network
+          sub-packages: '["nvcc", "cudart"]'
           use-github-cache: true
 
       # Set up .NET SDKs

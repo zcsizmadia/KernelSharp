@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -6,6 +7,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -25,8 +27,41 @@ namespace KernelSharp.Build;
 /// Runs before CoreCompile. Generated files are added to @(Compile) via the target's
 /// Output element so the Roslyn compiler sees them automatically.
 /// </summary>
-public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
+public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICancelableTask
 {
+    // ── Cancellation (ICancelable / Ctrl+C) ───────────────────────────────────
+
+    private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>
+    /// Registered live nvcc processes so they can be killed immediately on Cancel().
+    /// Processes are removed once they exit so the set never grows unboundedly.
+    /// </summary>
+    private readonly ConcurrentDictionary<int, Process> _activeProcesses = new();
+
+    /// <summary>
+    /// Called by MSBuild when the user presses Ctrl+C or the build is cancelled.
+    /// Kills every nvcc process that is still running so none survive as orphans.
+    /// </summary>
+    public void Cancel()
+    {
+        _cts.Cancel();
+        foreach (var p in _activeProcesses.Values)
+        {
+            try
+            {
+                if (!p.HasExited)
+                {
+                    p.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
+        }
+    }
+
     // ── Inputs ───────────────────────────────────────────────────────────────
 
     /// <summary>All C# source files in the project (@(Compile)).</summary>
@@ -576,10 +611,36 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             return new KernelResult(k, null, string.Empty, "Could not start nvcc process.");
         }
 
+        _activeProcesses.TryAdd(proc.Id, proc);
+
         string stderr = proc.StandardError.ReadToEnd();
         string stdout = proc.StandardOutput.ReadToEnd();
-        proc.WaitForExit();
+
+        // Poll WaitForExit so we react to cancellation promptly.
+        while (!proc.WaitForExit(500))
+        {
+            if (_cts.IsCancellationRequested)
+            {
+                try
+                {
+                    if (!proc.HasExited)
+                    {
+                        proc.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // best-effort
+                }
+
+                _activeProcesses.TryRemove(proc.Id, out _);
+                TryDelete(tempDir);
+                return new KernelResult(k, null, string.Empty, "Compilation cancelled.");
+            }
+        }
+
         int exitCode = proc.ExitCode;
+        _activeProcesses.TryRemove(proc.Id, out _);
         proc.Dispose();
 
         if (exitCode != 0)

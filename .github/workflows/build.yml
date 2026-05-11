@@ -34,7 +34,7 @@ jobs:
           - os: ubuntu-latest
             label: "Linux GCC 13"
             cuda: "13.2.0"
-            pack: true # This job will be responsible for packing and uploading the NuGet packages
+            upload_nupkgs: true
 
           - os: ubuntu-22.04
             label: "Linux Clang 14"
@@ -92,20 +92,19 @@ jobs:
           dotnet test -c Release --no-build
   
       - name: Pack
-        if: matrix.pack == true
         shell: bash
         run: |
           dotnet pack -c Release --no-build -o ./nupkgs
 
+      - name: Validate nupkg
+        shell: bash
+        run: |
+          dotnet build -c Release NupkgValidator/NupkgValidator.csproj
+
       - name: Upload NuGet packages
-        if: matrix.pack == true
+        if: matrix.upload_nupkgs == true
         uses: actions/upload-artifact@v7
         with:
           name: nupkgs
           path: ./nupkgs
 
-      - name: Validate nupkg
-        if: matrix.pack == true
-        shell: bash
-        run: |
-          dotnet build -c Release NupkgValidator/NupkgValidator.csproj

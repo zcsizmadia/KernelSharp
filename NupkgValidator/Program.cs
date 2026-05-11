@@ -12,7 +12,7 @@ public partial class VectorMath
             int n)
         {
             int i = blockIdx.x * blockDim.x + threadIdx.x;
-            if (i < n) c[i] = a[i] + b[i];z
+            if (i < n) c[i] = a[i] + b[i];
         }
         """)]
     public partial void AddVectors(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> c);

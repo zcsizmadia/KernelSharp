@@ -19,7 +19,7 @@ public partial class ReductionOps
             if ((threadIdx.x & 31) == 0)
                 atomicAdd(output, v);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void WarpReduce(CudaBuffer<float> input, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -44,7 +44,7 @@ public partial class ReductionOps
                 } while (assumed != old);
             }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void WarpMax(CudaBuffer<float> input, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -80,7 +80,7 @@ public partial class ReductionOps
             }
             if (tid < n) output[tid] = smem[tid];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void PrefixSum(CudaBuffer<float> input, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -96,7 +96,7 @@ public partial class ReductionOps
             if ((threadIdx.x & 31) == 0)
                 atomicAdd(output, v);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void SumReduce(CudaBuffer<float> input, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -120,7 +120,7 @@ public partial class ReductionOps
                 } while (assumed != old);
             }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void MaxReduce(CudaBuffer<float> input, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -145,7 +145,7 @@ public partial class ReductionOps
                 } while (assumed != old);
             }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void MinReduce(CudaBuffer<float> input, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -162,7 +162,7 @@ public partial class ReductionOps
             if ((threadIdx.x & 31) == 0)
                 atomicAdd(output, v);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void DotProduct(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> output);
 
     [GpuKernel("""
@@ -179,6 +179,6 @@ public partial class ReductionOps
                 atomicAdd(output, v);
             // The host must take sqrt of the result after the kernel finishes.
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void L2Norm(CudaBuffer<float> x, CudaBuffer<float> output);
 }

@@ -335,7 +335,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
     // ── Incremental build check ───────────────────────────────────────────────
 
-    private static bool IsUpToDate(string sourceFile, string generatedFile)
+    internal static bool IsUpToDate(string sourceFile, string generatedFile)
     {
         if (!File.Exists(generatedFile)) return false;
         try { return File.GetLastWriteTimeUtc(generatedFile) >= File.GetLastWriteTimeUtc(sourceFile); }
@@ -606,7 +606,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         return sb.ToString();
     }
 
-    private static void EmitBase64Chunks(StringBuilder sb, string b64, string indent)
+    internal static void EmitBase64Chunks(StringBuilder sb, string b64, string indent)
     {
         const int chunkSize = 128;
         for (int start = 0; start < b64.Length; start += chunkSize)
@@ -777,7 +777,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         return null;
     }
 
-    private static string GetCudaRoot(string nvcc)
+    internal static string GetCudaRoot(string nvcc)
     {
         string nvccDir = Path.GetDirectoryName(nvcc) ?? string.Empty;
         return Path.GetDirectoryName(nvccDir) ?? string.Empty;
@@ -801,7 +801,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         return string.Empty;
     }
 
-    private static string NormalizeArch(string arch)
+    internal static string NormalizeArch(string arch)
     {
         arch = arch.Trim();
         if (arch.StartsWith("compute_", StringComparison.Ordinal)) return arch;
@@ -810,7 +810,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         return "compute_" + arch;
     }
 
-    private static int ParseMaxParallelism(string value) =>
+    internal static int ParseMaxParallelism(string value) =>
         !string.IsNullOrWhiteSpace(value)
         && int.TryParse(value.Trim(), out int parsed) && parsed > 0
             ? parsed : -1;  // -1 = all cores (Parallel.For default)

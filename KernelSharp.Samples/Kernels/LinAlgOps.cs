@@ -31,7 +31,7 @@ public partial class LinAlgOps
             k[base]     = k0 * cosA - k1 * sinA;
             k[base + 1] = k0 * sinA + k1 * cosA;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void RoPE(CudaBuffer<float> q, CudaBuffer<float> k, int seqLen, int headDim);
 
     [GpuKernel("""
@@ -52,7 +52,7 @@ public partial class LinAlgOps
             // Causal mask
             scores[qi * seqLen + ki] = (ki <= qi) ? s * scale : -1e38f;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void AttnScores(CudaBuffer<float> q, CudaBuffer<float> k, CudaBuffer<float> scores, int seqLen, int headDim);
 
     [GpuKernel("""
@@ -72,7 +72,7 @@ public partial class LinAlgOps
                 acc += attnWeights[qi * seqLen + ki] * v[ki * headDim + d];
             out[qi * headDim + d] = acc;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void AttnOutput(CudaBuffer<float> attnWeights, CudaBuffer<float> v, CudaBuffer<float> output, int seqLen, int headDim);
 
     [GpuKernel("""
@@ -93,7 +93,7 @@ public partial class LinAlgOps
                 acc += a[row * m + k] * b[k * m + col];
             c[idx] = acc;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void Gemm(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> c);
 
     [GpuKernel("""
@@ -109,7 +109,7 @@ public partial class LinAlgOps
             int row = idx / m, col = idx % m;
             at[col * m + row] = a[row * m + col];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void Transpose(CudaBuffer<float> a, CudaBuffer<float> at);
 
     [GpuKernel("""
@@ -131,6 +131,6 @@ public partial class LinAlgOps
             }
             if (tid < n) y[tid] = smem[tid];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void PrefixScan(CudaBuffer<float> x, CudaBuffer<float> y);
 }

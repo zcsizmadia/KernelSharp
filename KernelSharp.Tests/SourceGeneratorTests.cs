@@ -3,6 +3,7 @@
 // partial method wiring, compression, multi-kernel output.
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 using KernelSharp.Build;
@@ -356,5 +357,188 @@ public class SourceGeneratorTests
         await Assert.That(fileB).IsNotNull();
         await Assert.That(fileA!).Contains("_KernelA_compression = \"none\"");
         await Assert.That(fileB!).Contains("_KernelB_compression = \"gzip\"");
+    }
+
+    // ── SourceFile tests ──────────────────────────────────────────────────────
+
+    [Test]
+    public async Task Generator_ParseKernels_LoadsSourceFromExternalCuFile()
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), $"ks_test_{System.Guid.NewGuid():N}.cu");
+        try
+        {
+            // Write a real .cu file with a recognisable function name.
+            const string cuSource =
+                "extern \"C\" __global__ void FromFileKernel(float* a, int n) { }";
+            System.IO.File.WriteAllText(tempPath, cuSource, System.Text.Encoding.UTF8);
+
+            // Build C# source that references the file by absolute path.
+            // ParseKernels is called with filePath = "" so relative paths don't resolve;
+            // using an absolute path makes the test self-contained on any machine.
+            // $$""" lets single { } be literal and {{expr}} be interpolation.
+            string src = $$"""
+                using KernelSharp;
+                namespace Ns;
+                public partial class C {
+                    [GpuKernel(SourceFile = @"{{tempPath}}")]
+                    public partial void FromFileKernel(CudaBuffer<float> a);
+                }
+                """;
+
+            var tree    = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+            var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+            CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+
+            await Assert.That(kernels.Count).IsEqualTo(1)
+                .Because("one [GpuKernel(SourceFile=…)] method should be discovered");
+            await Assert.That(kernels[0].KernelSource).Contains("FromFileKernel")
+                .Because("KernelSource must be populated from the .cu file contents");
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+        }
+    }
+
+    // ── NormalizeArch ─────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task NormalizeArch_AlreadyPrefixed_ReturnsUnchanged()
+    {
+        await Assert.That(CompileCudaKernelsTask.NormalizeArch("compute_89")).IsEqualTo("compute_89");
+    }
+
+    [Test]
+    public async Task NormalizeArch_SmPrefix_ConvertsToPrefixed()
+    {
+        await Assert.That(CompileCudaKernelsTask.NormalizeArch("sm_80")).IsEqualTo("compute_80");
+    }
+
+    [Test]
+    public async Task NormalizeArch_DottedVersion_ConvertsToPrefixed()
+    {
+        await Assert.That(CompileCudaKernelsTask.NormalizeArch("8.9")).IsEqualTo("compute_89");
+    }
+
+    [Test]
+    public async Task NormalizeArch_PlainNumber_ConvertsToPrefixed()
+    {
+        await Assert.That(CompileCudaKernelsTask.NormalizeArch("90")).IsEqualTo("compute_90");
+    }
+
+    // ── ParseMaxParallelism ───────────────────────────────────────────────────
+
+    [Test]
+    public async Task ParseMaxParallelism_ValidPositive_ReturnsValue()
+    {
+        await Assert.That(CompileCudaKernelsTask.ParseMaxParallelism("4")).IsEqualTo(4);
+    }
+
+    [Test]
+    public async Task ParseMaxParallelism_EmptyString_ReturnsMinusOne()
+    {
+        await Assert.That(CompileCudaKernelsTask.ParseMaxParallelism(string.Empty)).IsEqualTo(-1);
+    }
+
+    [Test]
+    public async Task ParseMaxParallelism_Zero_ReturnsMinusOne()
+    {
+        await Assert.That(CompileCudaKernelsTask.ParseMaxParallelism("0")).IsEqualTo(-1);
+    }
+
+    [Test]
+    public async Task ParseMaxParallelism_Negative_ReturnsMinusOne()
+    {
+        await Assert.That(CompileCudaKernelsTask.ParseMaxParallelism("-2")).IsEqualTo(-1);
+    }
+
+    [Test]
+    public async Task ParseMaxParallelism_NonNumeric_ReturnsMinusOne()
+    {
+        await Assert.That(CompileCudaKernelsTask.ParseMaxParallelism("all")).IsEqualTo(-1);
+    }
+
+    // ── IsUpToDate ────────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task IsUpToDate_GeneratedMissing_ReturnsFalse()
+    {
+        string src = Path.GetTempFileName();
+        try
+        {
+            bool result = CompileCudaKernelsTask.IsUpToDate(src, Path.Combine(Path.GetTempPath(), "does_not_exist_xyz.g.cs"));
+            await Assert.That(result).IsFalse();
+        }
+        finally { File.Delete(src); }
+    }
+
+    [Test]
+    public async Task IsUpToDate_GeneratedNewer_ReturnsTrue()
+    {
+        string src = Path.GetTempFileName();
+        string gen = Path.GetTempFileName();
+        try
+        {
+            File.SetLastWriteTimeUtc(src, DateTime.UtcNow.AddSeconds(-10));
+            File.SetLastWriteTimeUtc(gen, DateTime.UtcNow);
+            bool result = CompileCudaKernelsTask.IsUpToDate(src, gen);
+            await Assert.That(result).IsTrue();
+        }
+        finally { File.Delete(src); File.Delete(gen); }
+    }
+
+    [Test]
+    public async Task IsUpToDate_GeneratedOlder_ReturnsFalse()
+    {
+        string src = Path.GetTempFileName();
+        string gen = Path.GetTempFileName();
+        try
+        {
+            File.SetLastWriteTimeUtc(src, DateTime.UtcNow);
+            File.SetLastWriteTimeUtc(gen, DateTime.UtcNow.AddSeconds(-10));
+            bool result = CompileCudaKernelsTask.IsUpToDate(src, gen);
+            await Assert.That(result).IsFalse();
+        }
+        finally { File.Delete(src); File.Delete(gen); }
+    }
+
+    // ── EmitBase64Chunks ──────────────────────────────────────────────────────
+
+    [Test]
+    public async Task EmitBase64Chunks_ShortString_EmitsSingleChunkWithSemicolon()
+    {
+        var sb = new System.Text.StringBuilder();
+        CompileCudaKernelsTask.EmitBase64Chunks(sb, "AAAA", "  ");
+        string result = sb.ToString().Trim();
+        await Assert.That(result).IsEqualTo("\"AAAA\");");
+    }
+
+    [Test]
+    public async Task EmitBase64Chunks_LongString_EmitsMultipleLines()
+    {
+        var sb = new System.Text.StringBuilder();
+        string b64 = new string('A', 300);  // longer than the 128-char chunk size
+        CompileCudaKernelsTask.EmitBase64Chunks(sb, b64, "");
+        string[] lines = sb.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        await Assert.That(lines.Length).IsGreaterThan(1);
+        await Assert.That(lines[^1].Trim()).EndsWith(");");
+        await Assert.That(lines[0].Trim()).EndsWith(" +");
+    }
+
+    // ── GetCudaRoot ───────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task GetCudaRoot_TypicalNvccPath_ReturnsParentOfBinDir()
+    {
+        string nvcc = Path.Combine("usr", "local", "cuda", "bin", "nvcc");
+        string expected = Path.Combine("usr", "local", "cuda");
+        await Assert.That(CompileCudaKernelsTask.GetCudaRoot(nvcc)).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task GetCudaRoot_EmptyString_ReturnsEmpty()
+    {
+        string result = CompileCudaKernelsTask.GetCudaRoot(string.Empty);
+        await Assert.That(result).IsEqualTo(string.Empty);
     }
 }

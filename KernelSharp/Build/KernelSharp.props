@@ -33,12 +33,14 @@
     <KernelSharpMsvcClPath Condition="'$(KernelSharpMsvcClPath)' == ''"></KernelSharpMsvcClPath>
 
     <!-- Comma-separated GPU architectures to embed SASS + PTX for.
-           compute_80 = Ampere  (A100 / RTX 30xx, 2020+)
-           compute_89 = Ada     (RTX 40xx, 2022+)
-           compute_90 = Hopper  (H100, 2022+)
+           compute_75  = Turing  (RTX 20xx / GTX 16xx, 2018+)
+           compute_80  = Ampere  (A100 / RTX 30xx, 2020+)
+           compute_89  = Ada     (RTX 40xx, 2022+)
+           compute_90  = Hopper  (H100, 2022+)
+           compute_100 = Blackwell (RTX 50xx / B-series, 2024+; requires CUDA 12.8+)
          For faster debug builds, restrict to one arch:
            <KernelSharpTargetArchs>compute_89</KernelSharpTargetArchs> -->
-    <KernelSharpTargetArchs Condition="'$(KernelSharpTargetArchs)' == ''">compute_80,compute_89,compute_90</KernelSharpTargetArchs>
+    <KernelSharpTargetArchs Condition="'$(KernelSharpTargetArchs)' == ''">compute_75,compute_80,compute_89,compute_90,compute_100</KernelSharpTargetArchs>
 
     <!-- Maximum parallel nvcc processes during build.
          Empty (default) = all available CPU cores.

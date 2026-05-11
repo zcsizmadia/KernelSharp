@@ -10,7 +10,6 @@ jobs:
   build:
     name: "CUDA ${{ matrix.cuda }} / ${{ matrix.label }}"
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
 
     strategy:
       fail-fast: false
@@ -36,7 +35,7 @@ jobs:
           # Linux
           - os: ubuntu-latest
             label: "Linux gcc"
-            container: nvidia/cuda:13.2.0-devel-ubuntu24.04
+            cuda: "13.2.0"
 
     steps:
       - name: Checkout repository
@@ -44,8 +43,6 @@ jobs:
 
       - name: Install CUDA Toolkit ${{ matrix.cuda }}
         uses: Jimver/cuda-toolkit@v0.2.35
-        # only on Windows, we use NVIDA devel container on Linux
-        if: runner.os == 'Windows'
         id: cuda-toolkit
         with:
           cuda: ${{ matrix.cuda }}
@@ -57,6 +54,14 @@ jobs:
         run: |
           nvcc --version
           printenv
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
       - name: Build
         shell: bash

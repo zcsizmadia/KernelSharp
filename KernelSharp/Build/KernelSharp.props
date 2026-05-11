@@ -17,11 +17,6 @@
          Example: <KernelSharpNvccStd>c++17</KernelSharpNvccStd> -->
     <KernelSharpNvccStd Condition="'$(KernelSharpNvccStd)' == ''">c++20</KernelSharpNvccStd>
 
-    <!-- Explicit CCCL (Thrust / libcudacxx / CUB) root directory.
-         Auto-detected from CUDA_PATH/include/cccl (bundled since CUDA 12.4).
-         Example: <KernelSharpCCCLPath>D:\libs\cccl</KernelSharpCCCLPath> -->
-    <KernelSharpCCCLPath Condition="'$(KernelSharpCCCLPath)' == ''"></KernelSharpCCCLPath>
-
     <!-- Extra nvcc flags appended to every kernel compilation in this project.
          Per-kernel overrides go in [GpuKernel(ExtraFlags = "…")].
          Example: <KernelSharpNvccExtraFlags>-lineinfo</KernelSharpNvccExtraFlags> -->

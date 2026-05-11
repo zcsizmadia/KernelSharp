@@ -35,7 +35,11 @@ Console.WriteLine($"[02] MulVectors  hc[0]={hc[0]:F0}  (expected 0)");
 
 // -- Activations
 float[] hx = new float[N];
-for (int i = 0; i < N; i++) hx[i] = (float)i / N - 0.5f;
+for (int i = 0; i < N; i++)
+{
+    hx[i] = (float)i / N - 0.5f;
+}
+
 using var dX = CudaBuffer<float>.Allocate(N);
 using var dY = CudaBuffer<float>.Allocate(N);
 dX.CopyFromHost(hx);

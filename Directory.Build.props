@@ -20,12 +20,4 @@
     <Authors>Zoltan Csizmadia</Authors>
   </PropertyGroup>
 
-  <!-- ── KernelSharp dev-repo overrides ──────────────────────────────────
-       In a published package these defaults live in
-       build/KernelSharp.SourceGenerator.props (auto-imported by NuGet).
-       Here we only set the values specific to this repository.           -->
-  <PropertyGroup>
-    <KernelSharpIncludePath Condition="'$(KernelSharpIncludePath)' == ''">c:\OpenSource\MatX\include</KernelSharpIncludePath>
-  </PropertyGroup>
-
 </Project>

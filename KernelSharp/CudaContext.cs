@@ -51,7 +51,11 @@ public sealed class CudaContext : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         if (_ctx != IntPtr.Zero)
         {

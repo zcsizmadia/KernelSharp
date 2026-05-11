@@ -5,14 +5,15 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
+
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
-
-using ParallelOptions = System.Threading.Tasks.ParallelOptions;
-
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+
+using ParallelOptions = System.Threading.Tasks.ParallelOptions;
 
 namespace KernelSharp.Build;
 
@@ -30,16 +31,13 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
     /// <summary>All C# source files in the project (@(Compile)).</summary>
     [Required]
-    public ITaskItem[] CompileItems { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] CompileItems { get; set; } = [];
 
     /// <summary>Path to the CUDA include directory (cuda.h, cuda_runtime.h, …).</summary>
     public string IncludePath { get; set; } = string.Empty;
 
     /// <summary>C++ standard passed to nvcc (default: c++20).</summary>
     public string NvccStd { get; set; } = "c++20";
-
-    /// <summary>Explicit CCCL (Thrust / libcudacxx / CUB) root directory.</summary>
-    public string CcclPath { get; set; } = string.Empty;
 
     /// <summary>Extra nvcc flags appended to every kernel in this project.</summary>
     public string NvccExtraFlags { get; set; } = string.Empty;
@@ -73,7 +71,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
     /// <summary>Generated .cs launcher files to add to @(Compile).</summary>
     [Output]
-    public ITaskItem[] GeneratedFiles { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] GeneratedFiles { get; set; } = [];
 
     // ── Entry point ──────────────────────────────────────────────────────────
 
@@ -86,6 +84,17 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
         // 1. Parse all .cs files syntactically to find [GpuKernel] methods
         var kernels = CollectKernels();
+
+        // Emit build warnings for any signature mismatches detected at parse time
+        foreach (var k in kernels)
+        {
+            if (k.ValidationWarning != null)
+            {
+                Log.LogWarning(null, "KERNELSHARP003", null, k.SourceFilePath, 0, 0, 0, 0,
+                    $"KernelSharp: {k.ValidationWarning}");
+            }
+        }
+
         if (kernels.Count == 0)
         {
             Log.LogMessage(MessageImportance.Low, "KernelSharp: no [GpuKernel] kernels found in project.");
@@ -113,7 +122,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         }
 
         // 3. Locate nvcc and cl.exe (done once, before the parallel loop)
-        string nvcc  = FindNvcc();
+        string nvcc = FindNvcc();
         string clDir = IsWindows ? FindClDir(MsvcClPath) : string.Empty;
 
         if (string.IsNullOrEmpty(nvcc) && toCompile.Any(k => !k.NotImplemented))
@@ -178,7 +187,9 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
                 // Log the exact nvcc command at Low importance (visible at -v:detailed only)
                 if (!string.IsNullOrEmpty(r.NvccArgs))
+                {
                     Log.LogCommandLine(MessageImportance.Low, $"nvcc {r.NvccArgs}");
+                }
             }
 
             string genPath = Path.Combine(outDir, $"{r.Kernel.ClassName}.{r.Kernel.MethodName}.g.cs");
@@ -189,7 +200,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             generatedPaths.Add(genPath);
         }
 
-        GeneratedFiles = generatedPaths.Select(p => (ITaskItem)new TaskItem(p)).ToArray();
+        GeneratedFiles = [.. generatedPaths.Select(p => (ITaskItem)new TaskItem(p))];
 
         if (GeneratedFiles.Length > 0)
         {
@@ -209,15 +220,25 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         foreach (var item in CompileItems)
         {
             string path = item.GetMetadata("FullPath");
-            if (string.IsNullOrEmpty(path) || !path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) continue;
-            if (!File.Exists(path)) continue;
+            if (string.IsNullOrEmpty(path) || !path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!File.Exists(path))
+            {
+                continue;
+            }
 
             string source;
             try { source = File.ReadAllText(path, Encoding.UTF8); }
             catch { continue; }
 
             // Fast pre-screen: skip files that don't reference [GpuKernel] at all
-            if (!source.Contains("GpuKernel", StringComparison.Ordinal)) continue;
+            if (!source.Contains("GpuKernel", StringComparison.Ordinal))
+            {
+                continue;
+            }
 
             SyntaxTree tree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest));
             ParseKernels(tree, path, result);
@@ -230,9 +251,20 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         var root = tree.GetRoot();
         foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
-            if (!method.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))) continue;
-            if (method.Parent is not ClassDeclarationSyntax cls) continue;
-            if (!cls.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))) continue;
+            if (!method.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
+            {
+                continue;
+            }
+
+            if (method.Parent is not ClassDeclarationSyntax cls)
+            {
+                continue;
+            }
+
+            if (!cls.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
+            {
+                continue;
+            }
 
             // Find [GpuKernel] or [GpuKernelAttribute] on this method
             AttributeSyntax? gpuAttr = null;
@@ -249,34 +281,46 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
                         break;
                     }
                 }
-                if (gpuAttr != null) break;
+                if (gpuAttr != null)
+                {
+                    break;
+                }
             }
-            if (gpuAttr == null) continue;
+            if (gpuAttr == null)
+            {
+                continue;
+            }
 
             // Extract attribute arguments
             string kernelSource = string.Empty;
-            string sourceFile   = string.Empty;
-            string arch         = string.Empty;
-            string extraFlags   = string.Empty;
-            string incPath      = string.Empty;
-            string compression  = string.Empty;
-            bool   notImpl      = false;
+            string sourceFile = string.Empty;
+            string arch = string.Empty;
+            string extraFlags = string.Empty;
+            string incPath = string.Empty;
+            string compression = string.Empty;
+            bool notImpl = false;
 
             var args = gpuAttr.ArgumentList?.Arguments ?? default;
             if (args.Count > 0 && args[0].NameEquals == null)
+            {
                 kernelSource = ExtractStringLiteral(args[0].Expression);
+            }
 
             foreach (var arg in args)
             {
-                if (arg.NameEquals == null) continue;
+                if (arg.NameEquals == null)
+                {
+                    continue;
+                }
+
                 switch (arg.NameEquals.Name.Identifier.Text)
                 {
-                    case "SourceFile":    sourceFile  = ExtractStringLiteral(arg.Expression); break;
-                    case "Arch":         arch        = ExtractStringLiteral(arg.Expression); break;
-                    case "ExtraFlags":   extraFlags  = ExtractStringLiteral(arg.Expression); break;
-                    case "IncludePath":  incPath     = ExtractStringLiteral(arg.Expression); break;
-                    case "Compression":  compression = ExtractStringLiteral(arg.Expression); break;
-                    case "NotImplemented": notImpl   = ExtractBoolLiteral(arg.Expression); break;
+                    case "SourceFile": sourceFile = ExtractStringLiteral(arg.Expression); break;
+                    case "Arch": arch = ExtractStringLiteral(arg.Expression); break;
+                    case "ExtraFlags": extraFlags = ExtractStringLiteral(arg.Expression); break;
+                    case "IncludePath": incPath = ExtractStringLiteral(arg.Expression); break;
+                    case "Compression": compression = ExtractStringLiteral(arg.Expression); break;
+                    case "NotImplemented": notImpl = ExtractBoolLiteral(arg.Expression); break;
                 }
             }
 
@@ -288,15 +332,20 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
                     ? Path.GetFullPath(Path.Combine(dir, sourceFile))
                     : sourceFile;
                 if (File.Exists(fullPath))
+                {
                     kernelSource = File.ReadAllText(fullPath, Encoding.UTF8);
+                }
             }
 
-            if (string.IsNullOrWhiteSpace(kernelSource) && !notImpl) continue;
+            if (string.IsNullOrWhiteSpace(kernelSource) && !notImpl)
+            {
+                continue;
+            }
 
-            string ns         = GetNamespace(cls);
-            string className  = cls.Identifier.Text;
+            string ns = GetNamespace(cls);
+            string className = cls.Identifier.Text;
             string methodName = method.Identifier.Text;
-            string paramList  = method.ParameterList.ToString();
+            string paramList = method.ParameterList.ToString();
 
             var @params = method.ParameterList.Parameters
                 .Select(p => new KernelParam(
@@ -305,10 +354,48 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
                     (p.Type?.ToString() ?? string.Empty).StartsWith("CudaBuffer", StringComparison.Ordinal)))
                 .ToArray();
 
+            // Validate the CUDA source signature against the C# declaration
+            string cudaFuncName = methodName;  // default: assume names match by convention
+            string? validationWarn = null;
+            if (!string.IsNullOrEmpty(kernelSource))
+            {
+                var sig = ExtractCudaSignature(kernelSource);
+                if (sig == null)
+                {
+                    validationWarn = $"No '__global__' function found in kernel source for '{className}.{methodName}'. " +
+                                     "Make sure the CUDA source contains 'extern \"C\" __global__ void {methodName}(…)'";
+                }
+                else
+                {
+                    cudaFuncName = sig.Value.Name;
+                    var warnings = new List<string>();
+                    if (!string.Equals(cudaFuncName, methodName, StringComparison.Ordinal))
+                    {
+                        warnings.Add($"CUDA function name '{cudaFuncName}' does not match C# method name '{methodName}' " +
+                                     $"in '{className}'. '{cudaFuncName}' will be used for cuModuleGetFunction.");
+                    }
+
+                    int csCount = @params.Length;
+                    int cudaCount = sig.Value.ParamCount;
+                    // Allow +1 for auto-injected 'n' (added when no int param exists and buffers are present)
+                    bool autoN = csCount == cudaCount - 1 && @params.Any(p => p.IsBuffer) && !@params.Any(p => !p.IsBuffer && p.TypeSyntax == "int");
+                    if (cudaCount != csCount && !autoN)
+                    {
+                        warnings.Add($"CUDA function '{cudaFuncName}' has {cudaCount} parameter(s) but C# method '{methodName}' " +
+                                     $"has {csCount}. Verify the signatures match.");
+                    }
+
+                    if (warnings.Count > 0)
+                    {
+                        validationWarn = string.Join(" ", warnings);
+                    }
+                }
+            }
+
             kernels.Add(new KernelInfo(
-                filePath, ns, className, methodName,
+                filePath, ns, className, methodName, cudaFuncName,
                 kernelSource, arch, extraFlags, incPath,
-                paramList, @params, notImpl, compression));
+                paramList, @params, notImpl, compression, validationWarn));
         }
     }
 
@@ -325,9 +412,14 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         while (node != null)
         {
             if (node is NamespaceDeclarationSyntax ns)
+            {
                 parts.Insert(0, ns.Name.ToString());
+            }
             else if (node is FileScopedNamespaceDeclarationSyntax fns)
+            {
                 parts.Insert(0, fns.Name.ToString());
+            }
+
             node = node.Parent;
         }
         return string.Join(".", parts);
@@ -337,7 +429,11 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
     internal static bool IsUpToDate(string sourceFile, string generatedFile)
     {
-        if (!File.Exists(generatedFile)) return false;
+        if (!File.Exists(generatedFile))
+        {
+            return false;
+        }
+
         try { return File.GetLastWriteTimeUtc(generatedFile) >= File.GetLastWriteTimeUtc(sourceFile); }
         catch { return false; }
     }
@@ -352,26 +448,32 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
         string archOverride = string.IsNullOrWhiteSpace(k.Arch) ? string.Empty : NormalizeArch(k.Arch);
         string[] archs = string.IsNullOrEmpty(archOverride)
-            ? (TargetArchs ?? "compute_80")
+            ? [.. (TargetArchs ?? "compute_80")
                 .Split(new[] { ';', ',', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(NormalizeArch).Distinct().ToArray()
-            : new[] { archOverride };
-        if (archs.Length == 0) archs = new[] { "compute_80" };
+                .Select(NormalizeArch).Distinct()]
+            : [archOverride];
+        if (archs.Length == 0)
+        {
+            archs = ["compute_80"];
+        }
 
         string tempDir = Path.Combine(Path.GetTempPath(), "KernelSharpGen",
             $"{k.MethodName}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
-        string srcFile    = Path.Combine(tempDir, $"{k.MethodName}.cu");
+        string srcFile = Path.Combine(tempDir, $"{k.MethodName}.cu");
         string fatbinFile = Path.Combine(tempDir, $"{k.MethodName}.fatbin");
         File.WriteAllText(srcFile, k.KernelSource, Encoding.UTF8);
 
         bool isWin = IsWindows;
-        char sep   = isWin ? '\\' : '/';
-        var sb     = new StringBuilder();
+        char sep = isWin ? '\\' : '/';
+        var sb = new StringBuilder();
 
         string ccbinPrefix = isWin && !string.IsNullOrEmpty(clDir)
             ? $"-ccbin \"{clDir}\" " : string.Empty;
-        if (!string.IsNullOrEmpty(ccbinPrefix)) sb.Append(ccbinPrefix);
+        if (!string.IsNullOrEmpty(ccbinPrefix))
+        {
+            sb.Append(ccbinPrefix);
+        }
 
         sb.Append("-fatbin ");
         string? lowestArch = null;
@@ -382,7 +484,9 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             lowestArch ??= arch;
         }
         if (lowestArch != null)
+        {
             sb.Append($"-gencode arch={lowestArch},code={lowestArch} ");
+        }
 
         string std = string.IsNullOrWhiteSpace(NvccStd) ? "c++20" : NvccStd;
         sb.Append($"-x cu -std={std} --extended-lambda --use_fast_math ");
@@ -390,21 +494,17 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         string cudaRoot = GetCudaRoot(nvcc);
         if (!string.IsNullOrWhiteSpace(effectiveInc))
         {
-            string inc  = effectiveInc.TrimEnd('\\', '/');
+            string inc = effectiveInc.TrimEnd('\\', '/');
             sb.Append($"-I\"{inc}\" ");
-            string cccl = ResolveCcclPath(CcclPath, inc, cudaRoot, isWin);
-            if (!string.IsNullOrEmpty(cccl))
-            {
-                sb.Append($"-I\"{cccl}{sep}thrust\" ");
-                sb.Append($"-I\"{cccl}{sep}libcudacxx{sep}include\" ");
-                sb.Append($"-I\"{cccl}{sep}cub\" ");
-            }
         }
         if (!string.IsNullOrEmpty(cudaRoot))
         {
             sb.Append($"-I\"{cudaRoot}{sep}include\" ");
             string cccl13 = Path.Combine(cudaRoot, "include", "cccl");
-            if (Directory.Exists(cccl13)) sb.Append($"-I\"{cccl13}\" ");
+            if (Directory.Exists(cccl13))
+            {
+                sb.Append($"-I\"{cccl13}\" ");
+            }
         }
 
         sb.Append("-D_USE_MATH_DEFINES ");
@@ -418,11 +518,18 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             sb.Append("-Xcompiler \"-fPIC\" ");
         }
 
-        if (!string.IsNullOrWhiteSpace(NvccExtraFlags)) sb.Append($"{NvccExtraFlags} ");
-        if (!string.IsNullOrWhiteSpace(k.ExtraFlags))   sb.Append($"{k.ExtraFlags} ");
+        if (!string.IsNullOrWhiteSpace(NvccExtraFlags))
+        {
+            sb.Append($"{NvccExtraFlags} ");
+        }
+
+        if (!string.IsNullOrWhiteSpace(k.ExtraFlags))
+        {
+            sb.Append($"{k.ExtraFlags} ");
+        }
 
         // Record clean args (no -ccbin path, no file paths) for the generated file comment
-        string rawArgs  = sb.ToString();
+        string rawArgs = sb.ToString();
         string cleanArgs = (!string.IsNullOrEmpty(ccbinPrefix)
             ? rawArgs.Replace(ccbinPrefix, string.Empty, StringComparison.Ordinal)
             : rawArgs).Trim();
@@ -433,12 +540,12 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName               = nvcc,
-                Arguments              = sb.ToString(),
+                FileName = nvcc,
+                Arguments = sb.ToString(),
                 RedirectStandardOutput = true,
-                RedirectStandardError  = true,
-                UseShellExecute        = false,
-                CreateNoWindow         = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
             }
         };
 
@@ -476,10 +583,26 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated/>");
         sb.AppendLine($"// Kernel   : {k.ClassName}.{k.MethodName}");
-        if (!string.IsNullOrEmpty(ci.CudaVersion))  sb.AppendLine($"// CUDA     : {ci.CudaVersion}");
-        if (!string.IsNullOrEmpty(ci.NvccVersion))  sb.AppendLine($"// nvcc     : {ci.NvccVersion}");
-        if (!string.IsNullOrEmpty(ci.HostCompiler)) sb.AppendLine($"// Compiler : {ci.HostCompiler}");
-        if (!string.IsNullOrEmpty(nvccArgs))         sb.AppendLine($"// nvcc args: {nvccArgs}");
+        if (!string.IsNullOrEmpty(ci.CudaVersion))
+        {
+            sb.AppendLine($"// CUDA     : {ci.CudaVersion}");
+        }
+
+        if (!string.IsNullOrEmpty(ci.NvccVersion))
+        {
+            sb.AppendLine($"// nvcc     : {ci.NvccVersion}");
+        }
+
+        if (!string.IsNullOrEmpty(ci.HostCompiler))
+        {
+            sb.AppendLine($"// Compiler : {ci.HostCompiler}");
+        }
+
+        if (!string.IsNullOrEmpty(nvccArgs))
+        {
+            sb.AppendLine($"// nvcc args: {nvccArgs}");
+        }
+
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
         sb.AppendLine("using KernelSharp;");
@@ -504,10 +627,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             return sb.ToString();
         }
 
-        bool useGzip   = compression == "gzip";
-        int  rawLen    = fatbin?.Length ?? 0;
-        byte[]? embed  = rawLen > 0 && useGzip ? GZipCompress(fatbin!) : fatbin;
-        int  embedLen  = embed?.Length ?? 0;
+        bool useGzip = compression == "gzip";
+        int rawLen = fatbin?.Length ?? 0;
+        byte[]? embed = rawLen > 0 && useGzip ? GZipCompress(fatbin!) : fatbin;
+        int embedLen = embed?.Length ?? 0;
 
         sb.AppendLine("    // Compression format used when embedding the fatbin at build time.");
         sb.AppendLine($"    private const string _{k.MethodName}_compression = \"{compression}\";");
@@ -560,16 +683,16 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         sb.AppendLine("                CudaDriverApi.CheckResult(");
         sb.AppendLine($"                    CudaDriverApi.cuModuleLoadData(out _{k.MethodName}_module, (IntPtr)_p));");
         sb.AppendLine("                CudaDriverApi.CheckResult(");
-        sb.AppendLine($"                    CudaDriverApi.cuModuleGetFunction(out _{k.MethodName}_func, _{k.MethodName}_module, \"{k.MethodName}\"));");
+        sb.AppendLine($"                    CudaDriverApi.cuModuleGetFunction(out _{k.MethodName}_func, _{k.MethodName}_module, \"{k.CudaFunctionName}\"));");
         sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine();
 
-        var bufferParams   = k.Params.Where(p => p.IsBuffer).ToArray();
+        var bufferParams = k.Params.Where(p => p.IsBuffer).ToArray();
         var firstIntScalar = k.Params.FirstOrDefault(p => !p.IsBuffer && p.TypeSyntax == "int");
-        bool autoInjectN   = firstIntScalar == null && bufferParams.Length > 0;
-        int  kpSize        = k.Params.Length + (autoInjectN ? 1 : 0);
+        bool autoInjectN = firstIntScalar == null && bufferParams.Length > 0;
+        int kpSize = k.Params.Length + (autoInjectN ? 1 : 0);
 
         sb.AppendLine($"    public partial void {k.MethodName}{k.ParameterList}");
         sb.AppendLine("    {");
@@ -585,13 +708,18 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         }
         sb.AppendLine($"            void** _kp = stackalloc void*[{kpSize}];");
         for (int i = 0; i < k.Params.Length; i++)
+        {
             sb.AppendLine($"            _kp[{i}] = (void*)(&_p{i});");
+        }
 
         string nExpr = firstIntScalar != null ? firstIntScalar.Name
             : bufferParams.Length > 0 ? $"(int){bufferParams[0].Name}.Length" : "1";
         sb.AppendLine($"            int _n = {nExpr};");
         if (autoInjectN)
+        {
             sb.AppendLine($"            _kp[{k.Params.Length}] = (void*)(&_n);  // auto-injected n");
+        }
+
         sb.AppendLine("            uint _threads = 256;");
         sb.AppendLine("            uint _blocks = (uint)((_n + (int)_threads - 1) / (int)_threads);");
         sb.AppendLine();
@@ -604,6 +732,30 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         sb.AppendLine();
         sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    // Matches the first __global__ function signature in a CUDA source string.
+    // Group 1 = function name, Group 2 = raw parameter list (may be empty).
+    private static readonly Regex s_globalKernelRx = new(
+        @"__global__\s+[\w\s*]+?\s+(\w+)\s*\(([^)]*?)\)",
+        RegexOptions.Compiled | RegexOptions.Singleline);
+
+    /// <summary>
+    /// Extracts the first <c>__global__</c> function name and parameter count from a CUDA source string.
+    /// Returns <c>null</c> if no <c>__global__</c> function is found.
+    /// </summary>
+    internal static (string Name, int ParamCount)? ExtractCudaSignature(string source)
+    {
+        var m = s_globalKernelRx.Match(source);
+        if (!m.Success)
+        {
+            return null;
+        }
+
+        string name = m.Groups[1].Value;
+        string paramBlock = m.Groups[2].Value.Trim();
+        int paramCount = string.IsNullOrEmpty(paramBlock) ? 0 : paramBlock.Split(',').Length;
+        return (name, paramCount);
     }
 
     internal static void EmitBase64Chunks(StringBuilder sb, string b64, string indent)
@@ -622,7 +774,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
     {
         var ms = new MemoryStream();
         using (var gz = new GZipStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+        {
             gz.Write(data, 0, data.Length);
+        }
+
         return ms.ToArray();
     }
 
@@ -635,8 +790,8 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
     private static string FindNvcc()
     {
-        bool   isWin = IsWindows;
-        string exe   = isWin ? "nvcc.exe" : "nvcc";
+        bool isWin = IsWindows;
+        string exe = isWin ? "nvcc.exe" : "nvcc";
 
         foreach (string ev in new[] { "CUDA_PATH", "CUDA_TOOLKIT_ROOT_DIR" })
         {
@@ -644,22 +799,30 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             if (!string.IsNullOrEmpty(root))
             {
                 string c = Path.Combine(root, "bin", exe);
-                if (File.Exists(c)) return c;
+                if (File.Exists(c))
+                {
+                    return c;
+                }
             }
         }
 
         string? pathEnv = Environment.GetEnvironmentVariable("PATH");
         if (pathEnv != null)
+        {
             foreach (string d in pathEnv.Split(Path.PathSeparator))
             {
                 string c = Path.Combine(d.Trim(), exe);
-                if (File.Exists(c)) return c;
+                if (File.Exists(c))
+                {
+                    return c;
+                }
             }
+        }
 
         if (isWin)
         {
-            string pf          = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            string nvidiaCuda  = Path.Combine(pf, "NVIDIA GPU Computing Toolkit", "CUDA");
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string nvidiaCuda = Path.Combine(pf, "NVIDIA GPU Computing Toolkit", "CUDA");
             if (Directory.Exists(nvidiaCuda))
             {
                 string[] vers = Directory.GetDirectories(nvidiaCuda);
@@ -668,7 +831,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
                 foreach (string ver in vers)
                 {
                     string c = Path.Combine(ver, "bin", exe);
-                    if (File.Exists(c)) return c;
+                    if (File.Exists(c))
+                    {
+                        return c;
+                    }
                 }
             }
         }
@@ -677,7 +843,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             foreach (string prefix in new[] { "/usr/local/cuda/bin", "/usr/bin" })
             {
                 string c = Path.Combine(prefix, exe);
-                if (File.Exists(c)) return c;
+                if (File.Exists(c))
+                {
+                    return c;
+                }
             }
         }
 
@@ -689,29 +858,52 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         if (!string.IsNullOrWhiteSpace(explicitClPath))
         {
             string c = explicitClPath.Trim('"').TrimEnd('\\', '/');
-            if (File.Exists(c)) return Path.GetDirectoryName(c) ?? string.Empty;
-            if (Directory.Exists(c)) return c;
+            if (File.Exists(c))
+            {
+                return Path.GetDirectoryName(c) ?? string.Empty;
+            }
+
+            if (Directory.Exists(c))
+            {
+                return c;
+            }
         }
 
         string? vcTools = Environment.GetEnvironmentVariable("VCToolsInstallDir");
         if (!string.IsNullOrEmpty(vcTools))
         {
             string dir = Path.Combine(vcTools.TrimEnd('\\', '/'), "bin", "HostX64", "x64");
-            if (Directory.Exists(dir)) return dir;
+            if (Directory.Exists(dir))
+            {
+                return dir;
+            }
         }
 
-        string pf86    = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
         string vswhere = Path.Combine(pf86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
-        if (File.Exists(vswhere)) { string? d = TryFindClViaVswhere(vswhere); if (d != null) return d; }
+        if (File.Exists(vswhere)) { string? d = TryFindClViaVswhere(vswhere); if (d != null)
+            {
+                return d;
+            }
+        }
 
         string? d2 = ScanVsRootsForCl();
-        if (d2 != null) return d2;
+        if (d2 != null)
+        {
+            return d2;
+        }
 
         string? pathEnv = Environment.GetEnvironmentVariable("PATH");
         if (pathEnv != null)
+        {
             foreach (string entry in pathEnv.Split(Path.PathSeparator))
+            {
                 if (File.Exists(Path.Combine(entry.Trim(), "cl.exe")))
+                {
                     return entry.Trim();
+                }
+            }
+        }
 
         return string.Empty;
     }
@@ -722,19 +914,22 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         {
             var p = Process.Start(new ProcessStartInfo
             {
-                FileName               = vswhere,
-                Arguments              = "-latest -prerelease -products * -property installationPath",
+                FileName = vswhere,
+                Arguments = "-latest -prerelease -products * -property installationPath",
                 RedirectStandardOutput = true,
-                UseShellExecute        = false,
-                CreateNoWindow         = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
             })!;
             string output = p.StandardOutput.ReadToEnd().Trim();
             p.WaitForExit();
             p.Dispose();
-            foreach (string line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (string line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
             {
                 string? d = FindClInVsRoot(line.Trim());
-                if (d != null) return d;
+                if (d != null)
+                {
+                    return d;
+                }
             }
         }
         catch { }
@@ -747,7 +942,11 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
         {
             string vsRoot = Path.Combine(Environment.GetFolderPath(sf), "Microsoft Visual Studio");
-            if (!Directory.Exists(vsRoot)) continue;
+            if (!Directory.Exists(vsRoot))
+            {
+                continue;
+            }
+
             string[] majors = Directory.GetDirectories(vsRoot);
             Array.Sort(majors, StringComparer.OrdinalIgnoreCase);
             Array.Reverse(majors);
@@ -756,7 +955,11 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
                 string[] eds = Directory.GetDirectories(major);
                 Array.Sort(eds, StringComparer.OrdinalIgnoreCase);
                 Array.Reverse(eds);
-                foreach (string ed in eds) { string? d = FindClInVsRoot(ed); if (d != null) return d; }
+                foreach (string ed in eds) { string? d = FindClInVsRoot(ed); if (d != null)
+                    {
+                        return d;
+                    }
+                }
             }
         }
         return null;
@@ -765,14 +968,21 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
     private static string? FindClInVsRoot(string vsRoot)
     {
         string msvcRoot = Path.Combine(vsRoot, "VC", "Tools", "MSVC");
-        if (!Directory.Exists(msvcRoot)) return null;
+        if (!Directory.Exists(msvcRoot))
+        {
+            return null;
+        }
+
         string[] versions = Directory.GetDirectories(msvcRoot);
         Array.Sort(versions, StringComparer.OrdinalIgnoreCase);
         Array.Reverse(versions);
         foreach (string ver in versions)
         {
             string dir = Path.Combine(ver, "bin", "HostX64", "x64");
-            if (File.Exists(Path.Combine(dir, "cl.exe"))) return dir;
+            if (File.Exists(Path.Combine(dir, "cl.exe")))
+            {
+                return dir;
+            }
         }
         return null;
     }
@@ -783,31 +993,20 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         return Path.GetDirectoryName(nvccDir) ?? string.Empty;
     }
 
-    private static string ResolveCcclPath(string explicitCcclPath, string inc, string cudaRoot, bool isWin)
-    {
-        if (!string.IsNullOrWhiteSpace(explicitCcclPath) && Directory.Exists(explicitCcclPath))
-            return explicitCcclPath.TrimEnd('\\', '/');
-        if (!string.IsNullOrWhiteSpace(inc))
-        {
-            string matxRoot  = Path.GetDirectoryName(inc.TrimEnd('\\', '/')) ?? string.Empty;
-            string fromBuild = Path.Combine(matxRoot, "build", "_deps", "cccl-src");
-            if (Directory.Exists(fromBuild)) return fromBuild;
-        }
-        if (!string.IsNullOrEmpty(cudaRoot))
-        {
-            string bundled = Path.Combine(cudaRoot, "include", "cccl");
-            if (Directory.Exists(bundled)) return bundled;
-        }
-        return string.Empty;
-    }
-
     internal static string NormalizeArch(string arch)
     {
         arch = arch.Trim();
-        if (arch.StartsWith("compute_", StringComparison.Ordinal)) return arch;
-        if (arch.StartsWith("sm_", StringComparison.Ordinal)) return "compute_" + arch.Substring(3);
-        if (arch.Contains('.')) return "compute_" + arch.Replace(".", string.Empty);
-        return "compute_" + arch;
+        if (arch.StartsWith("compute_", StringComparison.Ordinal))
+        {
+            return arch;
+        }
+
+        if (arch.StartsWith("sm_", StringComparison.Ordinal))
+        {
+            return "compute_" + arch[3..];
+        }
+
+        return arch.Contains('.') ? "compute_" + arch.Replace(".", string.Empty) : "compute_" + arch;
     }
 
     internal static int ParseMaxParallelism(string value) =>
@@ -825,14 +1024,14 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
     {
         public static readonly CompilerInfo Empty = new(string.Empty, string.Empty, string.Empty);
 
-        public string CudaVersion  { get; }
-        public string NvccVersion  { get; }
+        public string CudaVersion { get; }
+        public string NvccVersion { get; }
         public string HostCompiler { get; }
 
         private CompilerInfo(string cuda, string nvcc, string host)
         {
-            CudaVersion  = cuda;
-            NvccVersion  = nvcc;
+            CudaVersion = cuda;
+            NvccVersion = nvcc;
             HostCompiler = host;
         }
 
@@ -847,14 +1046,14 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             if (!string.IsNullOrEmpty(nvcc))
             {
                 string nvccOut = RunProc(nvcc, "--version", stderr: false);
-                foreach (string line in nvccOut.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                foreach (string line in nvccOut.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
                 {
                     int ri = line.IndexOf("release ", StringComparison.OrdinalIgnoreCase);
                     int vi = line.IndexOf(", V", StringComparison.OrdinalIgnoreCase);
                     if (ri >= 0 && vi > ri)
                     {
                         cudaVer = line.Substring(ri + 8, vi - ri - 8).Trim();
-                        nvccVer = line.Substring(vi + 3).Trim();
+                        nvccVer = line[(vi + 3)..].Trim();
                         break;
                     }
                 }
@@ -866,19 +1065,23 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
                 if (File.Exists(clExe))
                 {
                     string firstLine = RunProc(clExe, string.Empty, stderr: true)
-                        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
                         .FirstOrDefault() ?? string.Empty;
                     int verIdx = firstLine.IndexOf("Version ", StringComparison.OrdinalIgnoreCase);
                     if (verIdx >= 0)
-                        hostVer = "MSVC " + firstLine.Substring(verIdx + 8).Trim().Replace(" for ", " ");
+                    {
+                        hostVer = "MSVC " + firstLine[(verIdx + 8)..].Trim().Replace(" for ", " ");
+                    }
                     else if (firstLine.Length > 0)
+                    {
                         hostVer = "MSVC " + firstLine;
+                    }
                 }
             }
             else if (!IsWindows)
             {
                 string firstLine = RunProc("gcc", "--version", stderr: false)
-                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
                     .FirstOrDefault() ?? string.Empty;
                 if (firstLine.Length > 0)
                 {
@@ -896,14 +1099,14 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
             {
                 var p = Process.Start(new ProcessStartInfo
                 {
-                    FileName               = exe,
-                    Arguments              = args,
+                    FileName = exe,
+                    Arguments = args,
                     RedirectStandardOutput = true,
-                    RedirectStandardError  = true,
-                    UseShellExecute        = false,
-                    CreateNoWindow         = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
                 })!;
-                string stdout   = p.StandardOutput.ReadToEnd();
+                string stdout = p.StandardOutput.ReadToEnd();
                 string stderrTx = p.StandardError.ReadToEnd();
                 p.WaitForExit();
                 p.Dispose();
@@ -915,48 +1118,42 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
 
     // ── Data models ───────────────────────────────────────────────────────────
 
-    internal sealed class KernelInfo
+    internal sealed class KernelInfo(
+        string sourceFilePath, string ns, string className, string methodName, string cudaFunctionName,
+        string kernelSource, string arch, string extraFlags, string incPath,
+        string paramList, CompileCudaKernelsTask.KernelParam[] @params, bool notImpl, string compression,
+        string? validationWarning = null)
     {
-        public string SourceFilePath { get; }
-        public string Namespace      { get; }
-        public string ClassName      { get; }
-        public string MethodName     { get; }
-        public string KernelSource   { get; }
-        public string Arch           { get; }
-        public string ExtraFlags     { get; }
-        public string IncludePath    { get; }
-        public string ParameterList  { get; }
-        public KernelParam[] Params  { get; }
-        public bool NotImplemented   { get; }
-        public string Compression    { get; }
-
-        public KernelInfo(
-            string sourceFilePath, string ns, string className, string methodName,
-            string kernelSource, string arch, string extraFlags, string incPath,
-            string paramList, KernelParam[] @params, bool notImpl, string compression)
-        {
-            SourceFilePath = sourceFilePath; Namespace = ns; ClassName = className;
-            MethodName = methodName; KernelSource = kernelSource; Arch = arch;
-            ExtraFlags = extraFlags; IncludePath = incPath; ParameterList = paramList;
-            Params = @params; NotImplemented = notImpl; Compression = compression;
-        }
+        public string SourceFilePath { get; } = sourceFilePath; public string Namespace { get; } = ns; public string ClassName { get; } = className;
+        /// <summary>C# partial method name.</summary>
+        public string MethodName { get; } = methodName;         /// <summary>
+                                                                /// Actual <c>__global__</c> function name extracted from the CUDA source.
+                                                                /// Defaults to <see cref="MethodName"/> when no parseable signature is found.
+                                                                /// Used verbatim in <c>cuModuleGetFunction</c>.
+                                                                /// </summary>
+        public string CudaFunctionName { get; } = cudaFunctionName;
+        public string KernelSource { get; } = kernelSource; public string Arch { get; } = arch;
+        public string ExtraFlags { get; } = extraFlags; public string IncludePath { get; } = incPath; public string ParameterList { get; } = paramList;
+        public KernelParam[] Params { get; } = @params; public bool NotImplemented { get; } = notImpl; public string Compression { get; } = compression;
+        /// <summary>Non-null when a name or arg-count mismatch was detected at parse time.</summary>
+        public string? ValidationWarning { get; } = validationWarning;
     }
 
     internal sealed class KernelParam
     {
-        public string Name       { get; }
+        public string Name { get; }
         public string TypeSyntax { get; }
-        public bool   IsBuffer   { get; }
+        public bool IsBuffer { get; }
         public KernelParam(string name, string typeSyntax, bool isBuffer)
             => (Name, TypeSyntax, IsBuffer) = (name, typeSyntax, isBuffer);
     }
 
     private sealed class KernelResult
     {
-        public KernelInfo Kernel      { get; }
-        public byte[]?    FatbinBytes { get; }
-        public string     NvccArgs    { get; }
-        public string?    Error       { get; }
+        public KernelInfo Kernel { get; }
+        public byte[]? FatbinBytes { get; }
+        public string NvccArgs { get; }
+        public string? Error { get; }
         public KernelResult(KernelInfo kernel, byte[]? fatbin, string nvccArgs, string? error)
             => (Kernel, FatbinBytes, NvccArgs, Error) = (kernel, fatbin, nvccArgs, error);
     }

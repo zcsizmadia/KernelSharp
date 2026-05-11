@@ -40,7 +40,6 @@
         CompileItems="@(Compile)"
         IncludePath="$(KernelSharpIncludePath)"
         NvccStd="$(KernelSharpNvccStd)"
-        CcclPath="$(KernelSharpCCCLPath)"
         NvccExtraFlags="$(KernelSharpNvccExtraFlags)"
         MsvcClPath="$(KernelSharpMsvcClPath)"
         TargetArchs="$(KernelSharpTargetArchs)"

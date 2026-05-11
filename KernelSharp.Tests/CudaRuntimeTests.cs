@@ -48,7 +48,11 @@ public class CudaBufferTests
     [Test]
     public async Task AllocateFloat_AndCopyRoundTrip_PreservesValues()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
+
         using var ctx = CudaFixture.RequireCuda();
 
         float[] src = [1f, 2f, 3f, 4f, 5f];
@@ -59,13 +63,19 @@ public class CudaBufferTests
         buf.CopyToHost(dest);
 
         for (int i = 0; i < 5; i++)
+        {
             await Assert.That(dest[i]).IsEqualTo(src[i]).Within(1e-9f);
+        }
     }
 
     [Test]
     public async Task AllocateDouble_AndCopyRoundTrip_PreservesValues()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
+
         using var ctx = CudaFixture.RequireCuda();
 
         double[] src = [1.1, 2.2, 3.3];
@@ -76,13 +86,19 @@ public class CudaBufferTests
         buf.CopyToHost(dest);
 
         for (int i = 0; i < 3; i++)
+        {
             await Assert.That(dest[i]).IsEqualTo(src[i]).Within(1e-15);
+        }
     }
 
     [Test]
     public async Task ByteSize_MatchesExpected()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
+
         using var ctx = CudaFixture.RequireCuda();
 
         using var buf = CudaBuffer<float>.Allocate(128);
@@ -103,7 +119,10 @@ public class CudaContextTests
     [Test]
     public async Task Initialize_WhenGpuPresent_ReturnsValidHandle()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         using var ctx = CudaContext.Initialize();
         await Assert.That(ctx.Handle).IsNotEqualTo(IntPtr.Zero);
@@ -112,7 +131,10 @@ public class CudaContextTests
     [Test]
     public async Task Handle_AfterDispose_ThrowsObjectDisposedException()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         var ctx = CudaContext.Initialize();
         ctx.Dispose();
@@ -127,7 +149,11 @@ public class KernelCacheTests
     [Test]
     public async Task GetOrLoadFunction_CalledTwice_ReturnsSameHandle()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
+
         using var ctx = CudaFixture.RequireCuda();
 
         // Minimal valid kernel source (PTX assembly for SM 7.0+)

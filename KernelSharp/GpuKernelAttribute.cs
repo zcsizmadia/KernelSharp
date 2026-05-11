@@ -22,15 +22,19 @@ namespace KernelSharp;
 ///   public partial void FlashAttn(CudaBuffer q, CudaBuffer k, CudaBuffer v, CudaBuffer o);
 /// </code>
 /// </summary>
+/// <param name="source">
+/// Inline CUDA C/C++ source. Use a raw string literal to avoid escaping:
+/// <c>[GpuKernel("""...""")]</c>
+/// </param>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class GpuKernelAttribute : Attribute
+public sealed class GpuKernelAttribute(string source = "") : Attribute
 {
     /// <summary>
     /// Inline CUDA C/C++ source code for this kernel.
     /// The C# method name must exactly match the <c>extern "C" __global__</c> function name.
     /// Use a C# 11 raw string literal (<c>"""..."""</c>) to avoid escaping double quotes.
     /// </summary>
-    public string Source { get; }
+    public string Source { get; } = source;
 
     /// <summary>
     /// Path to an external <c>.cu</c> file, relative to the project root.
@@ -71,13 +75,4 @@ public sealed class GpuKernelAttribute : Attribute
     /// source file so the loader always decodes correctly regardless of project settings.
     /// </summary>
     public string Compression { get; init; } = "";
-
-    /// <param name="source">
-    /// Inline CUDA C/C++ source. Use a raw string literal to avoid escaping:
-    /// <c>[GpuKernel("""...""")]</c>
-    /// </param>
-    public GpuKernelAttribute(string source = "")
-    {
-        Source = source;
-    }
 }

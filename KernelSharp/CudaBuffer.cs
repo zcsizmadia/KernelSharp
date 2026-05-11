@@ -57,9 +57,11 @@ public sealed class CudaBuffer<T> : IDisposable where T : unmanaged
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(source);
         fixed (T* ptr = source)
+        {
             CudaDriverApi.CheckResult(
                 CudaDriverApi.cuMemcpyHtoD(_devicePointer, (IntPtr)ptr,
                     new IntPtr((long)source.Length * sizeof(T))));
+        }
     }
 
     /// <summary>Copy a span to device memory (blocking, host→device).</summary>
@@ -67,9 +69,11 @@ public sealed class CudaBuffer<T> : IDisposable where T : unmanaged
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         fixed (T* ptr = source)
+        {
             CudaDriverApi.CheckResult(
                 CudaDriverApi.cuMemcpyHtoD(_devicePointer, (IntPtr)ptr,
                     new IntPtr((long)source.Length * sizeof(T))));
+        }
     }
 
     /// <summary>Copy device memory back to a managed array (blocking, device→host).</summary>
@@ -78,9 +82,11 @@ public sealed class CudaBuffer<T> : IDisposable where T : unmanaged
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
         fixed (T* ptr = destination)
+        {
             CudaDriverApi.CheckResult(
                 CudaDriverApi.cuMemcpyDtoH((IntPtr)ptr, _devicePointer,
                     new IntPtr((long)destination.Length * sizeof(T))));
+        }
     }
 
     /// <summary>Copy device memory back to a span (blocking, device→host).</summary>
@@ -88,14 +94,20 @@ public sealed class CudaBuffer<T> : IDisposable where T : unmanaged
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         fixed (T* ptr = destination)
+        {
             CudaDriverApi.CheckResult(
                 CudaDriverApi.cuMemcpyDtoH((IntPtr)ptr, _devicePointer,
                     new IntPtr((long)destination.Length * sizeof(T))));
+        }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
 
         if (_ownsMemory && _devicePointer != IntPtr.Zero)

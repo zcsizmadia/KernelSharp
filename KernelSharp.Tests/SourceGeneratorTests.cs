@@ -31,13 +31,12 @@ public class SourceGeneratorTests
             new CSharpParseOptions(LanguageVersion.Latest));
         var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
         CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
-        return kernels
+        return [.. kernels
             .Select(k => CompileCudaKernelsTask.BuildLauncherSource(
                 k, null,
                 CompileCudaKernelsTask.EffectiveCompression(k.Compression, projectCompression),
                 CompileCudaKernelsTask.CompilerInfo.Empty,
-                string.Empty))
-            .ToList();
+                string.Empty))];
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────
@@ -385,7 +384,7 @@ public class SourceGeneratorTests
                 }
                 """;
 
-            var tree    = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+            var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
             var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
             CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
 
@@ -396,7 +395,10 @@ public class SourceGeneratorTests
         }
         finally
         {
-            if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+            if (System.IO.File.Exists(tempPath))
+            {
+                System.IO.File.Delete(tempPath);
+            }
         }
     }
 
@@ -517,7 +519,7 @@ public class SourceGeneratorTests
     public async Task EmitBase64Chunks_LongString_EmitsMultipleLines()
     {
         var sb = new System.Text.StringBuilder();
-        string b64 = new string('A', 300);  // longer than the 128-char chunk size
+        string b64 = new('A', 300);  // longer than the 128-char chunk size
         CompileCudaKernelsTask.EmitBase64Chunks(sb, b64, "");
         string[] lines = sb.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
         await Assert.That(lines.Length).IsGreaterThan(1);
@@ -540,5 +542,113 @@ public class SourceGeneratorTests
     {
         string result = CompileCudaKernelsTask.GetCudaRoot(string.Empty);
         await Assert.That(result).IsEqualTo(string.Empty);
+    }
+
+    // ── ExtractCudaSignature ──────────────────────────────────────────────────
+
+    [Test]
+    public async Task ExtractCudaSignature_SimpleKernel_ReturnsNameAndParamCount()
+    {
+        const string src = "extern \"C\" __global__ void AddVectors(float* a, float* b, float* c, int n) {}";
+        var sig = CompileCudaKernelsTask.ExtractCudaSignature(src);
+        await Assert.That(sig).IsNotNull();
+        await Assert.That(sig!.Value.Name).IsEqualTo("AddVectors");
+        await Assert.That(sig.Value.ParamCount).IsEqualTo(4);
+    }
+
+    [Test]
+    public async Task ExtractCudaSignature_NoGlobalFunction_ReturnsNull()
+    {
+        const string src = "void hostHelper(float* x) {}";
+        var sig = CompileCudaKernelsTask.ExtractCudaSignature(src);
+        await Assert.That(sig).IsNull();
+    }
+
+    [Test]
+    public async Task ExtractCudaSignature_ZeroParamKernel_ReturnsZeroCount()
+    {
+        const string src = "__global__ void Ping() {}";
+        var sig = CompileCudaKernelsTask.ExtractCudaSignature(src);
+        await Assert.That(sig).IsNotNull();
+        await Assert.That(sig!.Value.ParamCount).IsEqualTo(0);
+    }
+
+    // ── ValidationWarning via ParseKernels ────────────────────────────────────
+
+    [Test]
+    public async Task ParseKernels_MatchingNames_NoValidationWarning()
+    {
+        const string src = """
+            using KernelSharp;
+            namespace Ns;
+            public partial class C {
+                [GpuKernel("__global__ void MyKernel(float* a, int n) {}")]
+                public partial void MyKernel(CudaBuffer<float> a, int n);
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        await Assert.That(kernels.Count).IsEqualTo(1);
+        await Assert.That(kernels[0].ValidationWarning).IsNull();
+        await Assert.That(kernels[0].CudaFunctionName).IsEqualTo("MyKernel");
+    }
+
+    [Test]
+    public async Task ParseKernels_MismatchedName_SetsValidationWarningAndCudaFunctionName()
+    {
+        const string src = """
+            using KernelSharp;
+            namespace Ns;
+            public partial class C {
+                [GpuKernel("__global__ void cuda_add(float* a, int n) {}")]
+                public partial void CSharpAdd(CudaBuffer<float> a, int n);
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        await Assert.That(kernels.Count).IsEqualTo(1);
+        await Assert.That(kernels[0].ValidationWarning).IsNotNull()
+            .Because("a mismatch between CUDA and C# names should produce a warning");
+        await Assert.That(kernels[0].CudaFunctionName).IsEqualTo("cuda_add")
+            .Because("the actual CUDA function name should be used for cuModuleGetFunction");
+    }
+
+    [Test]
+    public async Task ParseKernels_ArgCountMismatch_SetsValidationWarning()
+    {
+        const string src = """
+            using KernelSharp;
+            namespace Ns;
+            public partial class C {
+                [GpuKernel("__global__ void Scale(float* a, float s, int n, int extra) {}")]
+                public partial void Scale(CudaBuffer<float> a, float s, int n);
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        await Assert.That(kernels.Count).IsEqualTo(1);
+        await Assert.That(kernels[0].ValidationWarning).IsNotNull()
+            .Because("a CUDA/C# parameter count mismatch should produce a warning");
+    }
+
+    [Test]
+    public async Task BuildLauncherSource_UsesCudaFunctionName_InEnsureLoaded()
+    {
+        // Kernel with a CUDA name that differs from the C# method name
+        const string src = """
+            using KernelSharp;
+            namespace Ns;
+            public partial class C {
+                [GpuKernel("__global__ void cuda_scale(float* a, float s, int n) {}")]
+                public partial void Scale(CudaBuffer<float> a, float s, int n);
+            }
+            """;
+        var files = GenerateSources(src);
+        await Assert.That(files.Count).IsEqualTo(1);
+        await Assert.That(files[0]).Contains("\"cuda_scale\"")
+            .Because("cuModuleGetFunction must use the actual CUDA function name, not the C# method name");
     }
 }

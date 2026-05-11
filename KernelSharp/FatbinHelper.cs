@@ -9,7 +9,7 @@ namespace KernelSharp;
 /// Centralising this avoids duplicating identical decompression logic in every
 /// generated file.
 /// </summary>
-internal static class FatbinHelper
+public static class FatbinHelper
 {
     /// <summary>
     /// Decodes a fatbin that was embedded at build time.
@@ -21,7 +21,7 @@ internal static class FatbinHelper
     /// The compression format used at build time: <c>"gzip"</c> or <c>"none"</c>.
     /// </param>
     /// <returns>The raw fatbin bytes ready to pass to <c>cuModuleLoadData</c>.</returns>
-    internal static byte[] Decode(byte[] encoded, string compression)
+    public static byte[] Decode(byte[] encoded, string compression)
     {
         if (compression != "gzip")
         {

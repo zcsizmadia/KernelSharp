@@ -102,14 +102,15 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         }
 
         // 2. Separate up-to-date kernels from those needing (re)compilation.
-        //    A kernel is up-to-date when its generated .cs is newer than its source .cs.
+        //    A kernel is up-to-date when its generated .cs is newer than its source .cs
+        //    AND the cached file contains an actual fatbin (not a stale NotImplemented stub).
         var toCompile = new List<KernelInfo>();
         var upToDatePaths = new List<string>();
 
         foreach (var k in kernels)
         {
             string genPath = Path.Combine(outDir, $"{k.ClassName}.{k.MethodName}.g.cs");
-            if (!k.NotImplemented && IsUpToDate(k.SourceFilePath, genPath))
+            if (!k.NotImplemented && IsUpToDate(k.SourceFilePath, genPath) && !IsStubFile(genPath))
             {
                 upToDatePaths.Add(genPath);
                 Log.LogMessage(MessageImportance.Low,
@@ -435,6 +436,26 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task
         }
 
         try { return File.GetLastWriteTimeUtc(generatedFile) >= File.GetLastWriteTimeUtc(sourceFile); }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Returns true when a generated .g.cs is a NotImplemented stub — i.e. it contains no
+    /// compiled fatbin.  A stale stub must not be treated as up-to-date for a kernel that is
+    /// no longer flagged NotImplemented in the C# source.
+    /// </summary>
+    internal static bool IsStubFile(string generatedFile)
+    {
+        try
+        {
+            // Read only the first 2 KB — the stub marker appears near the top.
+            using var fs = new FileStream(generatedFile, FileMode.Open, FileAccess.Read, FileShare.Read);
+            int toRead = (int)Math.Min(fs.Length, 2048);
+            byte[] buf = new byte[toRead];
+            int read = fs.Read(buf, 0, toRead);
+            string header = Encoding.UTF8.GetString(buf, 0, read);
+            return header.Contains("NotImplementedException", StringComparison.Ordinal);
+        }
         catch { return false; }
     }
 

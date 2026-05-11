@@ -158,6 +158,6 @@ public partial class ActivationFunctions
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) y[i] = tanhf(x[i]);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void TanhActivation(CudaBuffer<float> x, CudaBuffer<float> y);
 }

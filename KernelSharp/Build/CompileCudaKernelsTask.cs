@@ -206,7 +206,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
                     results[i] = new KernelResult(k, null, string.Empty, null);
                     return;
                 }
-                results[i] = CompileKernel(k, nvcc, clDir);
+                results[i] = CompileKernel(k, nvcc, clDir, verboseImportance);
             });
 
         // 6. Write generated .cs files and collect paths for @(Compile)
@@ -217,18 +217,10 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         {
             var r = results[i];
 
-            // Always log the nvcc command when available: at Normal on failure (so it
-            // appears without raising verbosity), at verboseImportance on success.
-            if (!string.IsNullOrEmpty(r.NvccArgs))
-            {
-                MessageImportance cmdImportance = r.Error != null ? MessageImportance.Normal : verboseImportance;
-                Log.LogCommandLine(cmdImportance, $"nvcc {r.NvccArgs}");
-            }
-
             if (r.Error != null)
             {
                 Log.LogError(null, "KERNELSHARP002", null, r.Kernel.SourceFilePath, 0, 0, 0, 0,
-                    $"KernelSharp: nvcc {r.NvccArgs} failed for '{r.Kernel.ClassName}.{r.Kernel.MethodName}': {r.Error}");
+                    $"KernelSharp: nvcc failed for '{r.Kernel.ClassName}.{r.Kernel.MethodName}': {r.Error}");
                 success = false;
             }
             else
@@ -508,7 +500,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
 
     // ── nvcc invocation (thread-safe, each call uses its own temp dir) ────────
 
-    private KernelResult CompileKernel(KernelInfo k, string nvcc, string clDir)
+    private KernelResult CompileKernel(KernelInfo k, string nvcc, string clDir, MessageImportance verboseImportance)
     {
         string effectiveInc = !string.IsNullOrWhiteSpace(k.IncludePath) ? k.IncludePath
             : !string.IsNullOrWhiteSpace(IncludePath) ? IncludePath
@@ -605,6 +597,9 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         sb.Append($"\"{srcFile}\" -o \"{fatbinFile}\"");
 
         var nvccArgs = sb.ToString();
+
+        // Log the nvcc command
+        Log.LogCommandLine(verboseImportance, $"nvcc {nvccArgs}");
 
         var proc = new Process
         {

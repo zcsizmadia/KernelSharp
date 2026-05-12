@@ -44,8 +44,10 @@
     <None Include="build\KernelSharp.targets"
           Pack="true" PackagePath="build\KernelSharp.targets" />
 
-    <!-- Pack KernelSharp.Build.dll into build/ so the UsingTask AssemblyFile resolves in NuGet -->
-    <None Include="..\KernelSharp.Build\bin\$(Configuration)\$(TargetFramework)\KernelSharp.Build.dll"
+    <!-- Pack KernelSharp.Build.dll into build/ so the UsingTask AssemblyFile resolves in NuGet.
+         Use the lowest TFM (net8.0) — it loads on any .NET 8+ MSBuild host.
+         $(TargetFramework) is empty during the outer multi-TFM pack pass, so it must be hardcoded. -->
+    <None Include="..\KernelSharp.Build\bin\$(Configuration)\net8.0\KernelSharp.Build.dll"
           Pack="true" PackagePath="build\KernelSharp.Build.dll"
           Visible="false" />
   </ItemGroup>

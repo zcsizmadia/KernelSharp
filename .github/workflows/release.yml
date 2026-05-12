@@ -33,7 +33,7 @@ jobs:
           workflow: build.yml
           workflow_conclusion: success
           branch: main             # Strictly target the main branch
-          name: nuget-package
+          name: nupkgs
           path: ./nupkgs
           check_artifacts: true    # Ensures the workflow actually has the named artifact
           search_artifacts: true   # Finds the latest run that actually contains this artifact

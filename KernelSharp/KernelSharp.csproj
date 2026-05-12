@@ -22,7 +22,7 @@
     <PackageTags>cuda;gpu;kernels;nvcc;roslyn;sourcegenerator;hpc;ai;llm;dotnet;csharp;device;parallel</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/csizmadiatibor/KernelSharp</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/zcsizmadia/KernelSharp</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 

@@ -28,8 +28,10 @@ public static class KernelCache
         byte[] bytes = Encoding.ASCII.GetBytes(image + "\0");
         IntPtr module;
         fixed (byte* p = bytes)
+        {
             CudaDriverApi.CheckResult(
                 CudaDriverApi.cuModuleLoadData(out module, (IntPtr)p));
+        }
 
         CudaDriverApi.CheckResult(
             CudaDriverApi.cuModuleGetFunction(out IntPtr func, module, funcName));
@@ -43,7 +45,10 @@ public static class KernelCache
     public static void Clear()
     {
         foreach (var (module, _) in _cache.Values)
+        {
             CudaDriverApi.cuModuleUnload(module);
+        }
+
         _cache.Clear();
     }
 }

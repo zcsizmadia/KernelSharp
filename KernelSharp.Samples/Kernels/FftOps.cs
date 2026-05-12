@@ -38,7 +38,7 @@ public partial class FftOps
                 bodies[i].z  += bodies[i].vz * DT;
             }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void NBody(CudaBuffer<byte> bodies, int n);
 
     [GpuKernel("""
@@ -60,6 +60,6 @@ public partial class FftOps
             float norm = (k == 0) ? sqrtf(1.f / n) : sqrtf(2.f / n);
             ry[k] = sum * norm;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void DCT(CudaBuffer<float> x, CudaBuffer<float> y, int n);
 }

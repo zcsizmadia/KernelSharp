@@ -19,19 +19,34 @@ jobs:
             label: "VS 17 2022"
             cuda: "12.9.1"
 
-          - os: windows-2025-vs2026
-            label: "VS 18 2026"
-            cuda: "12.9.1"
+          - os: windows-2025
+            label: "VS 17 2022"
+            cuda: "13.2.0"
 
           - os: windows-2025-vs2026
             label: "VS 18 2026"
             cuda: "13.2.0"
-            pack: true # This job will be responsible for packing and uploading the NuGet packages
 
-          # Linux
-          # - os: ubuntu-latest
-          #   label: "Linux gcc"
-          #   cuda: "13.2.0"
+          - os: ubuntu-22.04
+            label: "Linux GCC 11"
+            cuda: "12.9.1"
+
+          - os: ubuntu-latest
+            label: "Linux GCC 13"
+            cuda: "13.2.0"
+            upload_nupkgs: true
+
+          - os: ubuntu-22.04
+            label: "Linux Clang 14"
+            cuda: "12.9.1"
+            clang_version: "14"
+            nvcc_extra_flags: "-ccbin clang++-14"
+
+          - os: ubuntu-latest
+            label: "Linux Clang 18"
+            cuda: "13.2.0"
+            clang_version: "18"
+            nvcc_extra_flags: "-ccbin clang++-18"
 
     steps:
       - name: Checkout repository
@@ -43,42 +58,53 @@ jobs:
         with:
           cuda: ${{ matrix.cuda }}
           method: network
+          # On Windows install the full CUDA toolkit to get the MSVC integration for nvcc,
+          # on Linux we can get away with just the compiler and runtime libraries
+          sub-packages: >-
+            ${{ runner.os != 'Windows'
+                && '["nvcc", "cudart"]'
+                || '[]'
+            }}
           use-github-cache: true
 
-      - name: Dump info
-        shell: bash
-        run: |
-          echo "CUDA Version: ${{ steps.cuda-toolkit.outputs.version }}"
-          echo "CUDA Path: ${{ steps.cuda-toolkit.outputs.path }}"
-          nvcc --version
-          printenv
+      - name: Install Clang ${{ matrix.clang_version }}
+        if: runner.os == 'Linux' && matrix.clang_version != ''
+        run: sudo apt-get install -y clang-${{ matrix.clang_version }}
+
+      # Set up .NET SDKs
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
       - name: Build
         shell: bash
         run: |
           dotnet restore
-          dotnet build -c Release --no-restore
+          dotnet build -c Release --no-restore -p:KernelSharpNvccExtraFlags="${{ matrix.nvcc_extra_flags }}"
 
       - name: Test
         shell: bash
         run: |
           dotnet test -c Release --no-build
-
-      - name: Pack
-        shell: bash
-        run: |
-          dotnet test -c Release --no-build
   
       - name: Pack
-        if: matrix.pack == true
         shell: bash
         run: |
-          dotnet restore
           dotnet pack -c Release --no-build -o ./nupkgs
 
+      - name: Validate nupkg
+        shell: bash
+        run: |
+          dotnet build -c Release NupkgValidator/NupkgValidator.csproj
+
       - name: Upload NuGet packages
-        if: matrix.pack == true
+        if: matrix.upload_nupkgs == true
         uses: actions/upload-artifact@v7
         with:
           name: nupkgs
           path: ./nupkgs
+

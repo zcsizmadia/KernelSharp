@@ -2,7 +2,7 @@
 
 > **Write CUDA kernels in C#. Compile at build time. Ship as a NuGet package.**
 
-KernelSharp is a .NET Roslyn source generator that lets you write CUDA C/C++ kernels
+KernelSharp is a .NET library that lets you write CUDA C/C++ kernels
 **directly inside your C# source files** — no cmake, no separate `.cu` build system, no runtime
 JIT overhead, no CUDA Runtime API boilerplate. Annotate a `partial` method with
 `[GpuKernel]`, write the kernel inline with a raw string literal, and by the time your
@@ -17,23 +17,26 @@ API with zero managed allocations on the hot path.
 | Feature | KernelSharp | Typical CUDA .NET wrapper |
 |---|---|---|
 | Kernel source lives next to its C# caller | ✅ inline raw string | ❌ separate .cu / .ptx file |
-| Build-time nvcc compilation | ✅ Roslyn incremental generator | ❌ manual CMake / MSBuild targets |
+| Build-time nvcc compilation | ✅ MSBuild task, parallel | ❌ manual CMake / MSBuild targets |
 | Multi-arch fatbin (Ampere, Ada, Hopper …) | ✅ automatic | ❌ per-arch manual flags |
 | Strongly-typed device buffers | ✅ `CudaBuffer<T>` | ❌ raw `IntPtr` |
 | Zero-config compiler auto-detection | ✅ nvcc + MSVC auto-discovered | ❌ path config required |
 | NuGet-installable, no CUDA SDK at runtime | ✅ fatbin embedded in DLL | ❌ SDK / driver headers required |
 | Parallel kernel compilation | ✅ all cores | ❌ N/A |
+| Single NuGet package | ✅ runtime + build task in one | ❌ separate packages |
 
 ---
 
 ## Quick Start
 
-### 1 — Add the NuGet packages
+### 1 — Add the NuGet package
 
 ```xml
 <PackageReference Include="KernelSharp" Version="1.0.0" />
-<!-- KernelSharp.SourceGenerator is a build-time-only dependency pulled in transitively -->
 ```
+
+A single package provides both the runtime (`CudaBuffer<T>`, `CudaContext`, …) and the
+MSBuild task that invokes nvcc at build time.
 
 ### 2 — Write your first kernel
 
@@ -60,10 +63,9 @@ public partial class MyKernels
 ### 3 — Call it like any C# method
 
 ```csharp
-using var ctx    = new CudaContext();          // initialises the CUDA Driver API
-using var stream = new CudaStream();
+using var ctx = CudaContext.Initialize();  // initialises the CUDA Driver API
 
-const int N = 1 << 20;                        // 1M elements
+const int N = 1 << 20;                    // 1M elements
 
 using var dA = CudaBuffer<float>.Allocate(N);
 using var dB = CudaBuffer<float>.Allocate(N);
@@ -76,15 +78,21 @@ dA.CopyFromHost(hA);
 dB.CopyFromHost(hB);
 
 var kernels = new MyKernels();
-kernels.AddVectors(dA, dB, dC, stream: stream);   // generated launch wrapper
+kernels.AddVectors(dA, dB, dC);   // generated launch wrapper
 
 float[] result = new float[N];
 dC.CopyToHost(result);
 Console.WriteLine(result[0]);   // 0.0 + 0.0 = 0.0 ✓
 ```
 
-No `cuModuleLoad`, no `cuLaunchKernel`, no kernel argument marshalling — **the source
-generator writes all of that code for you**.
+> **Multithreaded / parallel usage** — CUDA Driver API contexts are thread-local.
+> If you share a single `CudaContext` across threads (e.g. in a test suite with parallel
+> test execution), call `ctx.MakeCurrent()` at the start of each thread before issuing
+> any GPU operations. `CudaContext.Initialize()` only makes the context current on the
+> thread that called it.
+
+No `cuModuleLoad`, no `cuLaunchKernel`, no kernel argument marshalling — **the MSBuild
+task writes all of that code for you**.
 
 ---
 
@@ -121,11 +129,22 @@ public partial void FlashAttn(
 
 ```csharp
 [GpuKernel("""...""",
-    Arch       = "compute_89",          // single arch — faster debug builds
-    ExtraFlags = "-lineinfo -G",        // add device debug info
-    IncludePath = "vendor/cutlass/include")]
+    Arch           = "compute_89",          // single arch — faster debug builds
+    ExtraFlags     = "-lineinfo -G",        // add device debug info
+    IncludePath    = "vendor/cutlass/include",
+    ThreadsPerBlock = 128,                  // override default 256-thread blocks
+    BlocksPerGrid  = 4)]                   // or fix the block count entirely
 public partial void MyKernel(CudaBuffer<float> a, CudaBuffer<float> b);
 ```
+
+The `ThreadsPerBlock` / `BlocksPerGrid` properties control the `cuLaunchKernel` grid:
+
+| `ThreadsPerBlock` | `BlocksPerGrid` | Generated launch |
+|---|---|---|
+| 0 (default) | 0 (default) | `threads=256, blocks=ceil(n/256)` |
+| T | 0 | `threads=T, blocks=ceil(n/T)` |
+| 0 | B | `threads=256, blocks=B` |
+| T | B | `threads=T, blocks=B` (fully fixed — e.g. single-block scans) |
 
 ### Stub during development
 
@@ -187,24 +206,24 @@ public partial void DequantInt4(
 ```
 dotnet build
     │
-    ├─ Roslyn compiles your C# code
-    │      │
-    │      └─ KernelSharp.SourceGenerator (IIncrementalGenerator)
-    │              │
-    │              ├─ Scans for [GpuKernel] on partial methods
-    │              ├─ Extracts inline source or reads .cu file
-    │              ├─ Classifies each parameter:
-    │              │     CudaBuffer<T>  → Buffer  → extract .DevicePointer
-    │              │     int/float/...  → Scalar  → pass value directly
-    │              ├─ Spawns nvcc processes in parallel (all CPU cores)
-    │              │     one process per [GpuKernel] method
-    │              ├─ Collects resulting fatbin bytes
-    │              ├─ Optionally gzip-compresses the fatbin
-    │              └─ Emits  MyClass.MyMethod.g.cs  containing:
-    │                    • static readonly byte[] _fatbin = { … };
-    │                    • static IntPtr _module, _func;
-    │                    • public partial void MyMethod(…) { … cuLaunchKernel(…) }
+    ├─ Roslyn compiles your C# code (including [GpuKernel] declarations)
     │
+    └─ KernelSharp MSBuild task runs (BeforeTargets="CoreCompile")
+           │
+           ├─ Scans all .cs files for [GpuKernel] on partial methods
+           ├─ Extracts inline source or reads the referenced .cu file
+           ├─ Classifies each parameter:
+           │     CudaBuffer<T>  → Buffer  → extract .DevicePointer
+           │     int/float/...  → Scalar  → pass value directly
+           ├─ Spawns nvcc processes in parallel (all CPU cores by default)
+           │     one process per [GpuKernel] method
+           ├─ Collects resulting fatbin bytes
+           ├─ Optionally gzip-compresses the fatbin
+           └─ Emits  MyClass.MyMethod.g.cs  containing:
+                  • static readonly byte[] _fatbin = { … };
+                  • static IntPtr _module, _func;
+                  • public partial void MyMethod(…) { … cuLaunchKernel(…) }
+
     └─ Roslyn compiles the generated .g.cs files alongside your code
            → single assembly, zero external resources
 ```
@@ -215,9 +234,30 @@ reproducible and auditable.
 
 ### Incremental builds
 
-The Roslyn incremental generator tracks method signatures and source content. If neither
-changed, the generator does **not** re-run nvcc. Cold builds (all kernels new) compile
-in parallel; warm builds (no changes) add essentially zero overhead.
+The MSBuild task uses timestamp-based incremental compilation. If a kernel's source file
+hasn't changed since the last build, nvcc is not re-invoked. Cold builds (all kernels
+new) compile in parallel; warm builds (no changes) add essentially zero overhead.
+
+---
+
+## Checking In Generated Files (CI without nvcc)
+
+By default the generated `.g.cs` launcher files are written to `$(IntermediateOutputPath)`
+and are not committed to source control. If you want build machines that don't have CUDA
+installed to be able to compile your project, set `KernelSharpGeneratedOutputPath` to a
+committed folder:
+
+```xml
+<PropertyGroup>
+  <!-- Commit generated launchers so CI machines without nvcc can compile -->
+  <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath>
+</PropertyGroup>
+```
+
+When this property is set:
+- Generated `.g.cs` files are written to (and read from) that folder instead of `obj/`.
+- nvcc is still skipped when the generated file is **newer** than the source `.cs` file.
+- Machines without nvcc can compile using the checked-in launchers.
 
 ---
 
@@ -268,34 +308,76 @@ All settings have sensible defaults. Override only what you need:
   <!-- C++ standard: c++14, c++17, c++20 (default: c++20) -->
   <KernelSharpNvccStd>c++20</KernelSharpNvccStd>
 
-  <!-- Explicit path to CCCL (Thrust / libcudacxx / CUB) root
-       Auto-detected from CUDA install when empty -->
-  <KernelSharpCCCLPath></KernelSharpCCCLPath>
-
   <!-- Extra nvcc flags for every kernel in this project -->
   <KernelSharpNvccExtraFlags>-lineinfo</KernelSharpNvccExtraFlags>
 
-  <!-- Explicit cl.exe path; auto-detected via vswhere when empty (Windows) -->
+  <!-- Explicit cl.exe path; auto-detected via vswhere when empty (Windows only) -->
   <KernelSharpMsvcClPath></KernelSharpMsvcClPath>
 
-  <!-- Comma-separated target architectures (default: compute_80,compute_89,compute_90)
-       Use a single arch for faster debug builds: compute_89 -->
-  <KernelSharpTargetArchs>compute_80,compute_89,compute_90</KernelSharpTargetArchs>
+  <!-- Comma-separated target architectures
+       Default: compute_75 (Turing), compute_80 (Ampere), compute_89 (Ada),
+                compute_90 (Hopper), compute_100 (Blackwell, requires CUDA 12.8+)
+       Use a single arch for faster debug builds -->
+  <KernelSharpTargetArchs>compute_75,compute_80,compute_89,compute_90,compute_100</KernelSharpTargetArchs>
 
   <!-- Max parallel nvcc processes; empty = all CPU cores -->
   <KernelSharpMaxParallelism>4</KernelSharpMaxParallelism>
 
-  <!-- Fatbin embedding: none (default) or gzip (~50% smaller source) -->
-  <KernelSharpFatbinCompression>none</KernelSharpFatbinCompression>
+  <!-- Fatbin embedding: gzip (default, ~50% smaller) or none (raw bytes) -->
+  <KernelSharpFatbinCompression>gzip</KernelSharpFatbinCompression>
+
+  <!-- Optional: write generated .g.cs files to a committed folder (see above) -->
+  <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath>
 </PropertyGroup>
 ```
 
-When installed as a NuGet package, `build/KernelSharp.SourceGenerator.props` is
-auto-imported and sets all these defaults — no manual setup required.
+When installed as a NuGet package, `build/KernelSharp.props` is auto-imported and sets
+all these defaults — no manual setup required.
+
+---
+
+## Build Diagnostics
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `KERNELSHARP001` | Warning | nvcc not found — kernel compilation skipped, kernels will fail at runtime |
+| `KERNELSHARP002` | Error | nvcc exited with a non-zero code — build fails with the nvcc error output |
+| `KERNELSHARP003` | Warning | Mismatch between the `__global__` function name or parameter count in the CUDA source and the C# method declaration. The actual CUDA function name is still used for `cuModuleGetFunction`; this warning just flags the inconsistency so it can be fixed before it causes a runtime error. |
 
 ---
 
 ## Real-World Kernel Examples
+
+### Inclusive prefix scan (single-block Hillis-Steele)
+
+```csharp
+[GpuKernel("""
+    extern "C" __global__ void PrefixScan(
+        const float* __restrict__ x,
+        float*       __restrict__ y,
+        int n)
+    {
+        // Single-block, shared-memory Hillis-Steele inclusive scan (≤256 elements).
+        __shared__ float smem[256];
+        int tid = threadIdx.x;
+        smem[tid] = (tid < n) ? x[tid] : 0.f;
+        __syncthreads();
+        for (int d = 1; d < blockDim.x; d <<= 1) {
+            float v = (tid >= d) ? smem[tid - d] : 0.f;
+            __syncthreads();
+            smem[tid] += v;
+            __syncthreads();
+        }
+        if (tid < n) y[tid] = smem[tid];
+    }
+    """, ThreadsPerBlock = 256, BlocksPerGrid = 1)]   // ← fixed single-block launch
+public partial void PrefixScan(CudaBuffer<float> x, CudaBuffer<float> y);
+```
+
+`ThreadsPerBlock = 256, BlocksPerGrid = 1` tells the generator to emit a literal
+`_threads=256; _blocks=1;` rather than the default auto-compute. This is required for
+any single-block cooperative algorithm (scans, reductions that use `__syncthreads`
+across the whole grid, etc.).
 
 ### Attention scores (transformer self-attention)
 
@@ -383,18 +465,79 @@ no CUDA SDK installation needed on end-user machines.
 
 ---
 
-## Packages
+## Package
 
 | Package | Purpose |
 |---|---|
-| `KernelSharp` | Runtime: `CudaBuffer<T>`, `CudaContext`, `CudaStream`, Driver API P/Invokes |
-| `KernelSharp.SourceGenerator` | Build-time: Roslyn generator + MSBuild `.props` auto-import |
+| `KernelSharp` | Runtime + build task: `CudaBuffer<T>`, `CudaContext`, `CudaStream`, Driver API P/Invokes, and the MSBuild task that compiles CUDA kernels at build time |
 
-Add only `KernelSharp` to your project — it pulls in the source generator as a
-build-time analyzer automatically.
+A single package covers everything. No separate generator package is needed.
+
+> **Implementation note:** inside the package, the MSBuild task lives in
+> `build/KernelSharp.Build.dll` (a separate assembly from the runtime `KernelSharp.dll`).
+> This prevents the MSBuild host from locking `KernelSharp.dll` during builds,
+> allowing incremental rebuilds of the library itself without DLL-lock errors.
+
+---
+
+## Building from Source
+
+### Prerequisites
+
+| Tool | Notes |
+|---|---|
+| [.NET 10 SDK](https://dotnet.microsoft.com/download) | Required |
+| [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) (11.0+) | Required to compile `.cu` kernels; optional if you only work with `NotImplemented` stubs |
+| MSVC (Visual Studio 2019+) | Windows only — required by nvcc as host compiler; auto-detected via `vswhere` |
+
+### Repository layout
+
+```
+KernelSharp.Build/        ← MSBuild task (CompileCudaKernelsTask)
+                            packed into build/KernelSharp.Build.dll in the NuGet package
+KernelSharp/              ← Runtime library (CudaBuffer<T>, CudaContext, …)
+  build/
+    KernelSharp.props     ← auto-imported MSBuild properties
+    KernelSharp.targets   ← UsingTask + KernelSharp_CompileCudaKernels target
+KernelSharp.Samples/      ← example kernels
+KernelSharp.Tests/        ← unit + integration tests (TUnit)
+```
+
+### Build
+
+```sh
+dotnet build
+```
+
+Build order is `KernelSharp.Build` → `KernelSharp` → `KernelSharp.Samples` /
+`KernelSharp.Tests`. MSBuild respects the `ProjectReference` dependency chain, so
+`KernelSharp.Build.dll` is always ready before the task is needed.
+
+### Run tests
+
+```sh
+dotnet test
+```
+
+Tests that require a physical GPU are skipped automatically when no CUDA-capable
+device is detected. The code-generation tests (`SourceGeneratorTests`) run without a
+GPU.
+
+### Pack
+
+```sh
+dotnet pack KernelSharp/KernelSharp.csproj -c Release
+```
+
+The produced `.nupkg` contains:
+- `lib/net10.0/KernelSharp.dll` — runtime assembly
+- `build/KernelSharp.targets` — MSBuild target
+- `build/KernelSharp.props` — MSBuild properties
+- `build/KernelSharp.Build.dll` — MSBuild task assembly (loaded by MSBuild, never by end-user code)
 
 ---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+

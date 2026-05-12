@@ -27,7 +27,7 @@ public partial class StatisticsAndSolvers
             }
             if (mask[tid] == 0.f) mask[tid] = 0.f;   // zero out non-top-k
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void TopKMask(CudaBuffer<float> scores, CudaBuffer<float> mask, int n, int k);
 
     [GpuKernel("""
@@ -48,7 +48,7 @@ public partial class StatisticsAndSolvers
             out[i * 2    ] = lo * scale;
             out[i * 2 + 1] = hi * scale;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void DequantInt4(CudaBuffer<byte> packed, CudaBuffer<float> scales, CudaBuffer<float> output, int n);
 
     [GpuKernel("""
@@ -66,6 +66,6 @@ public partial class StatisticsAndSolvers
             for (int d = threadIdx.x; d < hiddenDim; d += blockDim.x)
                 dst[d] = row[d];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void EmbedLookup(CudaBuffer<int> tokenIds, CudaBuffer<float> table, CudaBuffer<float> output, int hiddenDim);
 }

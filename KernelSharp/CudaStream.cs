@@ -39,7 +39,11 @@ public sealed class CudaStream : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         if (_stream != IntPtr.Zero)
         {

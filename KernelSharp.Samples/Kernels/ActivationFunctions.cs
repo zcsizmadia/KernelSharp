@@ -14,7 +14,7 @@ public partial class ActivationFunctions
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) y[i] = x[i] > 0.f ? x[i] : 0.f;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void ReLU(CudaBuffer<float> x, CudaBuffer<float> y);
 
     [GpuKernel("""
@@ -33,7 +33,7 @@ public partial class ActivationFunctions
                 y[i] = 0.5f * v * (1.f + tanhf(inner));
             }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void GELU(CudaBuffer<float> x, CudaBuffer<float> y);
 
     [GpuKernel("""
@@ -46,7 +46,7 @@ public partial class ActivationFunctions
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) { float v = x[i]; y[i] = v / (1.f + expf(-v)); }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void SiLU(CudaBuffer<float> x, CudaBuffer<float> y);
 
     [GpuKernel("""
@@ -63,7 +63,7 @@ public partial class ActivationFunctions
                 y[i] = (g / (1.f + expf(-g))) * up[i];
             }
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void SwiGLU(CudaBuffer<float> gate, CudaBuffer<float> up, CudaBuffer<float> y);
 
     [GpuKernel("""
@@ -93,7 +93,7 @@ public partial class ActivationFunctions
             for (int j = threadIdx.x; j < n; j += blockDim.x)
                 row_y[j] = row_x[j] * rms * weight[j];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void RMSNorm(CudaBuffer<float> x, CudaBuffer<float> weight, CudaBuffer<float> y, int n, float eps);
 
     [GpuKernel("""
@@ -134,7 +134,7 @@ public partial class ActivationFunctions
             for (int j = threadIdx.x; j < n; j += blockDim.x)
                 ry[j] /= sum;
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void Softmax(CudaBuffer<float> x, CudaBuffer<float> y, int n);
 
     [GpuKernel("""
@@ -146,7 +146,7 @@ public partial class ActivationFunctions
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) y[i] = 1.f / (1.f + expf(-x[i]));
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void Sigmoid(CudaBuffer<float> x, CudaBuffer<float> y);
 
     [GpuKernel("""
@@ -158,6 +158,6 @@ public partial class ActivationFunctions
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) y[i] = tanhf(x[i]);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void TanhActivation(CudaBuffer<float> x, CudaBuffer<float> y);
 }

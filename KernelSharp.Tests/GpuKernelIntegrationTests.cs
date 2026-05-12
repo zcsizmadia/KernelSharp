@@ -23,7 +23,11 @@ public class GpuKernelIntegrationTests
     [Before(Class)]
     public static void SetupCuda()
     {
-        if (!CudaFixture.HasCuda) return;
+        if (!CudaFixture.HasCuda)
+        {
+            return;
+        }
+
         _ctx = CudaContext.Initialize();
     }
 
@@ -34,12 +38,27 @@ public class GpuKernelIntegrationTests
         _ctx = null;
     }
 
+    // Make the shared context current on whichever thread TUnit picks for this test.
+    // CUDA Driver API contexts are thread-local; without this, parallel tests that run
+    // on different pool threads will get CUDA_ERROR_INVALID_CONTEXT.
+    [Before(Test)]
+    public void EnsureContextCurrent()
+    {
+        if (CudaFixture.HasCuda)
+        {
+            _ctx?.MakeCurrent();
+        }
+    }
+
     // ── Vector Math ───────────────────────────────────────────────────────────
 
     [Test]
     public async Task AddVectors_ProducesCorrectResult()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         float[] ha = new float[N], hb = new float[N], hc = new float[N];
         for (int i = 0; i < N; i++) { ha[i] = i; hb[i] = N - i; }
@@ -56,13 +75,18 @@ public class GpuKernelIntegrationTests
 
         // Every element should equal N
         for (int i = 0; i < N; i++)
+        {
             await Assert.That(hc[i]).IsEqualTo(N).Within(Eps);
+        }
     }
 
     [Test]
     public async Task SubVectors_ProducesCorrectResult()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         float[] ha = new float[N], hb = new float[N], hc = new float[N];
         for (int i = 0; i < N; i++) { ha[i] = 2f * i; hb[i] = i; }
@@ -76,13 +100,18 @@ public class GpuKernelIntegrationTests
         dC.CopyToHost(hc);
 
         for (int i = 0; i < N; i++)
+        {
             await Assert.That(hc[i]).IsEqualTo(i).Within(Eps);
+        }
     }
 
     [Test]
     public async Task MulVectors_ProducesCorrectResult()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         float[] ha = new float[N], hb = new float[N], hc = new float[N];
         for (int i = 0; i < N; i++) { ha[i] = i + 1f; hb[i] = 2f; }
@@ -96,15 +125,20 @@ public class GpuKernelIntegrationTests
         dC.CopyToHost(hc);
 
         for (int i = 0; i < N; i++)
+        {
             await Assert.That(hc[i]).IsEqualTo(2f * (i + 1f)).Within(Eps);
+        }
     }
 
     [Test]
     public async Task AbsVector_NegativeInputs_AllPositive()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hx = Enumerable.Range(0, N).Select(i => (float)(i - N / 2)).ToArray();
+        float[] hx = [.. Enumerable.Range(0, N).Select(i => (float)(i - N / 2))];
         float[] hy = new float[N];
 
         using var dX = CudaBuffer<float>.Allocate(N);
@@ -115,7 +149,9 @@ public class GpuKernelIntegrationTests
         dY.CopyToHost(hy);
 
         for (int i = 0; i < N; i++)
+        {
             await Assert.That(hy[i]).IsGreaterThanOrEqualTo(0f);
+        }
     }
 
     // ── Activation Functions ──────────────────────────────────────────────────
@@ -123,9 +159,12 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task ReLU_NegativeInputsAreZeroed()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hx = Enumerable.Range(0, N).Select(i => (float)(i - N / 2)).ToArray();
+        float[] hx = [.. Enumerable.Range(0, N).Select(i => (float)(i - N / 2))];
         float[] hy = new float[N];
 
         using var dX = CudaBuffer<float>.Allocate(N);
@@ -136,15 +175,20 @@ public class GpuKernelIntegrationTests
         dY.CopyToHost(hy);
 
         for (int i = 0; i < N; i++)
+        {
             await Assert.That(hy[i]).IsGreaterThanOrEqualTo(0f);
+        }
     }
 
     [Test]
     public async Task Sigmoid_OutputBoundedBetweenZeroAndOne()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hx = Enumerable.Range(0, N).Select(i => (float)(i - N / 2) * 0.001f).ToArray();
+        float[] hx = [.. Enumerable.Range(0, N).Select(i => (float)(i - N / 2) * 0.001f)];
         float[] hy = new float[N];
 
         using var dX = CudaBuffer<float>.Allocate(N);
@@ -164,9 +208,12 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task TanhActivation_OutputBoundedBetweenMinusOneAndOne()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hx = Enumerable.Range(0, N).Select(i => (float)(i - N / 2) * 0.001f).ToArray();
+        float[] hx = [.. Enumerable.Range(0, N).Select(i => (float)(i - N / 2) * 0.001f)];
         float[] hy = new float[N];
 
         using var dX = CudaBuffer<float>.Allocate(N);
@@ -188,9 +235,12 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task SumReduce_AllOnes_EqualsN()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hones = Enumerable.Repeat(1f, N).ToArray();
+        float[] hones = [.. Enumerable.Repeat(1f, N)];
         float[] hout = new float[1];
 
         using var dIn = CudaBuffer<float>.Allocate(N);
@@ -206,9 +256,12 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task MaxReduce_ReturnsMaxElement()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hx = Enumerable.Range(0, N).Select(i => (float)i).ToArray();
+        float[] hx = [.. Enumerable.Range(0, N).Select(i => (float)i)];
         float[] hout = new float[1];
 
         using var dIn = CudaBuffer<float>.Allocate(N);
@@ -224,16 +277,19 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task MinReduce_ReturnsMinElement()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hx = Enumerable.Range(0, N).Select(i => (float)i + 1f).ToArray();
+        float[] hx = [.. Enumerable.Range(0, N).Select(i => (float)i + 1f)];
         float[] hout = new float[1];
 
         using var dIn = CudaBuffer<float>.Allocate(N);
         using var dOut = CudaBuffer<float>.Allocate(1);
 
         // MinReduce uses CAS-based float min; output must start at +infinity.
-        dOut.CopyFromHost(new float[] { float.MaxValue });
+        dOut.CopyFromHost([float.MaxValue]);
         dIn.CopyFromHost(hx);
         new ReductionOps().MinReduce(dIn, dOut);
         dOut.CopyToHost(hout);
@@ -244,9 +300,12 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task DotProduct_UnitVectors_EqualsN()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hones = Enumerable.Repeat(1f, N).ToArray();
+        float[] hones = [.. Enumerable.Repeat(1f, N)];
         float[] hout = new float[1];
 
         using var dA = CudaBuffer<float>.Allocate(N);
@@ -263,9 +322,12 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task L2Norm_UnitVector_EqualsSquareRootOfN()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        float[] hones = Enumerable.Repeat(1f, N).ToArray();
+        float[] hones = [.. Enumerable.Repeat(1f, N)];
         float[] hout = new float[1];
 
         using var dX = CudaBuffer<float>.Allocate(N);
@@ -285,7 +347,10 @@ public class GpuKernelIntegrationTests
     [Test]
     public async Task Gemm_IdentityMatrix_ReturnsOriginalMatrix()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         const int M = 64;
         float[] hA = new float[M * M];
@@ -308,24 +373,32 @@ public class GpuKernelIntegrationTests
 
         // I * I = I
         for (int r = 0; r < M; r++)
+        {
             for (int c = 0; c < M; c++)
             {
                 float expected = r == c ? 1f : 0f;
                 await Assert.That(hC[r * M + c]).IsEqualTo(expected).Within(Eps);
             }
+        }
     }
 
     [Test]
     public async Task Transpose_4x4_Matrix_ProducesCorrectResult()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
         // Transpose kernel requires a square M×M matrix (n = M*M).
         // A = 4×4 identity; Aᵀ = identity.
         const int M = 4;
         float[] hA = new float[M * M];
         float[] hAt = new float[M * M];
-        for (int r = 0; r < M; r++) hA[r * M + r] = 1f;  // identity
+        for (int r = 0; r < M; r++)
+        {
+            hA[r * M + r] = 1f;  // identity
+        }
 
         using var dA = CudaBuffer<float>.Allocate(M * M);
         using var dAt = CudaBuffer<float>.Allocate(M * M);
@@ -336,17 +409,24 @@ public class GpuKernelIntegrationTests
 
         // Aᵀ of identity is identity
         for (int r = 0; r < M; r++)
+        {
             for (int c = 0; c < M; c++)
+            {
                 await Assert.That(hAt[r * M + c]).IsEqualTo(hA[r * M + c]).Within(Eps);
+            }
+        }
     }
 
     [Test]
     public async Task PrefixScan_AllOnes_ProducesNaturalNumbers()
     {
-        if (!CudaFixture.HasCuda) throw new SkipTestException("No GPU");
+        if (!CudaFixture.HasCuda)
+        {
+            throw new SkipTestException("No GPU");
+        }
 
-        const int Len = 512; // single-block
-        float[] hx = Enumerable.Repeat(1f, Len).ToArray();
+        const int Len = 256; // single-block (≤256 elements fit in one 256-thread block)
+        float[] hx = [.. Enumerable.Repeat(1f, Len)];
         float[] hy = new float[Len];
 
         using var dX = CudaBuffer<float>.Allocate(Len);
@@ -357,6 +437,8 @@ public class GpuKernelIntegrationTests
         dY.CopyToHost(hy);
 
         for (int i = 0; i < Len; i++)
+        {
             await Assert.That(hy[i]).IsEqualTo(i + 1f).Within(Eps);
+        }
     }
 }

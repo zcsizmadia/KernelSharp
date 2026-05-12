@@ -27,13 +27,27 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- KernelSharp.Build contains the MSBuild task; built before this project.
+         ReferenceOutputAssembly=false keeps KernelSharp.dll free of a compile/runtime
+         dependency on KernelSharp.Build.dll — only the NuGet build/ folder needs it. -->
+    <ProjectReference Include="..\KernelSharp.Build\KernelSharp.Build.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- README ends up in the NuGet package root -->
     <None Include="..\README.md" Pack="true" PackagePath="\" />
-    <!-- Wire in the source generator so any project referencing KernelSharp
-         automatically gets CUDA kernel compilation at build time. -->
-    <ProjectReference Include="..\KernelSharp.SourceGenerator\KernelSharp.SourceGenerator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+
+    <!-- Pack the build/ props and targets so NuGet auto-imports them into consumers -->
+    <None Include="build\KernelSharp.props"
+          Pack="true" PackagePath="build\KernelSharp.props" />
+    <None Include="build\KernelSharp.targets"
+          Pack="true" PackagePath="build\KernelSharp.targets" />
+
+    <!-- Pack KernelSharp.Build.dll into build/ so the UsingTask AssemblyFile resolves in NuGet -->
+    <None Include="..\KernelSharp.Build\bin\$(Configuration)\$(TargetFramework)\KernelSharp.Build.dll"
+          Pack="true" PackagePath="build\KernelSharp.Build.dll"
+          Visible="false" />
   </ItemGroup>
 
 </Project>

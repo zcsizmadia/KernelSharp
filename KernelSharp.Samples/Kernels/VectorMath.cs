@@ -28,7 +28,7 @@ public partial class VectorMath
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) c[i] = a[i] * b[i];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void MulVectors(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> c);
 
     [GpuKernel("""
@@ -41,7 +41,7 @@ public partial class VectorMath
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) c[i] = a[i] - b[i];
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void SubVectors(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> c);
 
     [GpuKernel("""
@@ -55,7 +55,7 @@ public partial class VectorMath
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) d[i] = __fmaf_rn(a[i], b[i], c[i]);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void FmaVectors(CudaBuffer<float> a, CudaBuffer<float> b, CudaBuffer<float> c, CudaBuffer<float> d);
 
     [GpuKernel("""
@@ -67,6 +67,6 @@ public partial class VectorMath
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i < n) c[i] = fabsf(a[i]);
         }
-        """, NotImplemented = true)]
+        """)]
     public partial void AbsVector(CudaBuffer<float> a, CudaBuffer<float> c);
 }

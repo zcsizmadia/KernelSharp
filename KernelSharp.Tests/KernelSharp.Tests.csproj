@@ -13,13 +13,16 @@
     <PackageReference Include="TUnit.Assertions" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build.Framework" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" />
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\KernelSharp\KernelSharp.csproj" />
-    <ProjectReference Include="..\KernelSharp.SourceGenerator\KernelSharp.SourceGenerator.csproj" />
     <ProjectReference Include="..\KernelSharp.Samples\KernelSharp.Samples.csproj" />
+    <!-- Direct reference so InternalsVisibleTo('KernelSharp.Tests') in KernelSharp.Build works -->
+    <ProjectReference Include="..\KernelSharp.Build\KernelSharp.Build.csproj" />
   </ItemGroup>
 
 </Project>

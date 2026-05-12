@@ -44,6 +44,10 @@ public static partial class CudaDriverApi
 
     [LibraryImport(LibName)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial CuResult cuCtxSetCurrent(IntPtr ctx);
+
+    [LibraryImport(LibName)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial CuResult cuCtxGetCurrent(out IntPtr ctx);
 
     // ── Module (fatbin / PTX load) ──────────────────────────────────────────
@@ -126,11 +130,16 @@ public static partial class CudaDriverApi
     /// </summary>
     public static void CheckResult(CuResult result)
     {
-        if (result == CuResult.Success) return;
+        if (result == CuResult.Success)
+        {
+            return;
+        }
 
         string message = $"CUDA Driver error: {result}";
         if (cuGetErrorString(result, out IntPtr pStr) == CuResult.Success && pStr != IntPtr.Zero)
+        {
             message = Marshal.PtrToStringAnsi(pStr) ?? message;
+        }
 
         throw new CudaException(result, message);
     }

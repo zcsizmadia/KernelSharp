@@ -49,9 +49,24 @@ public sealed class CudaContext : IDisposable
         catch (CudaException) { return 0; }
     }
 
+    /// <summary>
+    /// Makes this context current on the calling thread.
+    /// CUDA Driver API contexts are thread-local: call this at the start of every
+    /// thread (or <c>[Before(Test)]</c> hook) that will issue CUDA operations.
+    /// </summary>
+    public void MakeCurrent()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        CudaDriverApi.CheckResult(CudaDriverApi.cuCtxSetCurrent(_ctx));
+    }
+
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         if (_ctx != IntPtr.Zero)
         {

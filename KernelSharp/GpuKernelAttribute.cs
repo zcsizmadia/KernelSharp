@@ -22,15 +22,19 @@ namespace KernelSharp;
 ///   public partial void FlashAttn(CudaBuffer q, CudaBuffer k, CudaBuffer v, CudaBuffer o);
 /// </code>
 /// </summary>
+/// <param name="source">
+/// Inline CUDA C/C++ source. Use a raw string literal to avoid escaping:
+/// <c>[GpuKernel("""...""")]</c>
+/// </param>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class GpuKernelAttribute : Attribute
+public sealed class GpuKernelAttribute(string source = "") : Attribute
 {
     /// <summary>
     /// Inline CUDA C/C++ source code for this kernel.
     /// The C# method name must exactly match the <c>extern "C" __global__</c> function name.
     /// Use a C# 11 raw string literal (<c>"""..."""</c>) to avoid escaping double quotes.
     /// </summary>
-    public string Source { get; }
+    public string Source { get; } = source;
 
     /// <summary>
     /// Path to an external <c>.cu</c> file, relative to the project root.
@@ -72,12 +76,17 @@ public sealed class GpuKernelAttribute : Attribute
     /// </summary>
     public string Compression { get; init; } = "";
 
-    /// <param name="source">
-    /// Inline CUDA C/C++ source. Use a raw string literal to avoid escaping:
-    /// <c>[GpuKernel("""...""")]</c>
-    /// </param>
-    public GpuKernelAttribute(string source = "")
-    {
-        Source = source;
-    }
+    /// <summary>
+    /// Number of CUDA threads per block used in the generated <c>cuLaunchKernel</c> call.
+    /// 0 (default) lets the generator use 256.
+    /// Must be a multiple of 32 and ≤ 1024.
+    /// </summary>
+    public int ThreadsPerBlock { get; init; } = 0;
+
+    /// <summary>
+    /// Fixed number of blocks in the X-dimension of the grid.
+    /// 0 (default) auto-computes as <c>ceil(n / ThreadsPerBlock)</c>.
+    /// Set to 1 for single-block kernels such as inclusive prefix scans.
+    /// </summary>
+    public int BlocksPerGrid { get; init; } = 0;
 }

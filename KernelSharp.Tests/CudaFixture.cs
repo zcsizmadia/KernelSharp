@@ -25,8 +25,6 @@ internal static class CudaFixture
     /// </summary>
     public static CudaContext RequireCuda()
     {
-        if (!HasCuda)
-            throw new SkipTestException("No CUDA-capable GPU detected – test skipped.");
-        return CudaContext.Initialize();
+        return !HasCuda ? throw new SkipTestException("No CUDA-capable GPU detected – test skipped.") : CudaContext.Initialize();
     }
 }

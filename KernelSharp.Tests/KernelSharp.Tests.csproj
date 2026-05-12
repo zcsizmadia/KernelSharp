@@ -21,6 +21,8 @@
   <ItemGroup>
     <ProjectReference Include="..\KernelSharp\KernelSharp.csproj" />
     <ProjectReference Include="..\KernelSharp.Samples\KernelSharp.Samples.csproj" />
+    <!-- Direct reference so InternalsVisibleTo('KernelSharp.Tests') in KernelSharp.Build works -->
+    <ProjectReference Include="..\KernelSharp.Build\KernelSharp.Build.csproj" />
   </ItemGroup>
 
 </Project>

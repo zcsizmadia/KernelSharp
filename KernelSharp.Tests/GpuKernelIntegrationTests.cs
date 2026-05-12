@@ -38,6 +38,18 @@ public class GpuKernelIntegrationTests
         _ctx = null;
     }
 
+    // Make the shared context current on whichever thread TUnit picks for this test.
+    // CUDA Driver API contexts are thread-local; without this, parallel tests that run
+    // on different pool threads will get CUDA_ERROR_INVALID_CONTEXT.
+    [Before(Test)]
+    public void EnsureContextCurrent()
+    {
+        if (CudaFixture.HasCuda)
+        {
+            _ctx?.MakeCurrent();
+        }
+    }
+
     // ── Vector Math ───────────────────────────────────────────────────────────
 
     [Test]
@@ -413,7 +425,7 @@ public class GpuKernelIntegrationTests
             throw new SkipTestException("No GPU");
         }
 
-        const int Len = 512; // single-block
+        const int Len = 256; // single-block (≤256 elements fit in one 256-thread block)
         float[] hx = [.. Enumerable.Repeat(1f, Len)];
         float[] hy = new float[Len];
 

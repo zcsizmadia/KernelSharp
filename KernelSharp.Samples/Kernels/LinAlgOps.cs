@@ -118,8 +118,9 @@ public partial class LinAlgOps
             float*       __restrict__ y,
             int n)
         {
-            // Inclusive prefix sum – single-block, shared memory Hillis-Steele.
-            extern __shared__ float smem[];
+            // Inclusive prefix sum – single-block (≤256 elements), shared memory Hillis-Steele.
+            // Static allocation avoids the need for dynamic sharedMemBytes at launch.
+            __shared__ float smem[256];
             int tid = threadIdx.x;
             smem[tid] = (tid < n) ? x[tid] : 0.f;
             __syncthreads();
@@ -131,6 +132,6 @@ public partial class LinAlgOps
             }
             if (tid < n) y[tid] = smem[tid];
         }
-        """)]
+        """, ThreadsPerBlock = 256, BlocksPerGrid = 1)]
     public partial void PrefixScan(CudaBuffer<float> x, CudaBuffer<float> y);
 }

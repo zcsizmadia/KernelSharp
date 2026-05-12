@@ -27,18 +27,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-      <_Parameter1>KernelSharp.Tests</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- MSBuild Task API — compile-time only; the build host provides these at runtime -->
-    <PackageReference Include="Microsoft.Build.Framework"      PrivateAssets="all" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
-    <!-- Roslyn syntactic parsing used by the task to discover [GpuKernel] methods -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp"  PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" ExcludeAssets="runtime" />
+    <!-- KernelSharp.Build contains the MSBuild task; built before this project.
+         ReferenceOutputAssembly=false keeps KernelSharp.dll free of a compile/runtime
+         dependency on KernelSharp.Build.dll — only the NuGet build/ folder needs it. -->
+    <ProjectReference Include="..\KernelSharp.Build\KernelSharp.Build.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -51,9 +44,9 @@
     <None Include="build\KernelSharp.targets"
           Pack="true" PackagePath="build\KernelSharp.targets" />
 
-    <!-- Pack KernelSharp.dll into build/ so the UsingTask AssemblyFile resolves in NuGet -->
-    <None Include="$(OutputPath)$(AssemblyName).dll"
-          Pack="true" PackagePath="build\$(AssemblyName).dll"
+    <!-- Pack KernelSharp.Build.dll into build/ so the UsingTask AssemblyFile resolves in NuGet -->
+    <None Include="..\KernelSharp.Build\bin\$(Configuration)\$(TargetFramework)\KernelSharp.Build.dll"
+          Pack="true" PackagePath="build\KernelSharp.Build.dll"
           Visible="false" />
   </ItemGroup>
 

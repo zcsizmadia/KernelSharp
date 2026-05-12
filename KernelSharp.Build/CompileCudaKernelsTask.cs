@@ -339,6 +339,8 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
             string incPath = string.Empty;
             string compression = string.Empty;
             bool notImpl = false;
+            int threadsPerBlock = 0;
+            int blocksPerGrid = 0;
 
             var args = gpuAttr.ArgumentList?.Arguments ?? default;
             if (args.Count > 0 && args[0].NameEquals == null)
@@ -361,6 +363,8 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
                     case "IncludePath": incPath = ExtractStringLiteral(arg.Expression); break;
                     case "Compression": compression = ExtractStringLiteral(arg.Expression); break;
                     case "NotImplemented": notImpl = ExtractBoolLiteral(arg.Expression); break;
+                    case "ThreadsPerBlock": threadsPerBlock = ExtractIntLiteral(arg.Expression); break;
+                    case "BlocksPerGrid": blocksPerGrid = ExtractIntLiteral(arg.Expression); break;
                 }
             }
 
@@ -435,7 +439,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
             kernels.Add(new KernelInfo(
                 filePath, ns, className, methodName, cudaFuncName,
                 kernelSource, arch, extraFlags, incPath,
-                paramList, @params, notImpl, compression, validationWarn));
+                paramList, @params, notImpl, compression, threadsPerBlock, blocksPerGrid, validationWarn));
         }
     }
 
@@ -444,6 +448,9 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
 
     private static bool ExtractBoolLiteral(ExpressionSyntax expr) =>
         expr is LiteralExpressionSyntax lit && lit.Token.Value is bool b && b;
+
+    private static int ExtractIntLiteral(ExpressionSyntax expr) =>
+        expr is LiteralExpressionSyntax lit && lit.Token.Value is int i ? i : 0;
 
     private static string GetNamespace(ClassDeclarationSyntax cls)
     {
@@ -798,8 +805,26 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
             sb.AppendLine($"            _kp[{k.Params.Length}] = (void*)(&_n);  // auto-injected n");
         }
 
-        sb.AppendLine("            uint _threads = 256;");
-        sb.AppendLine("            uint _blocks = (uint)((_n + (int)_threads - 1) / (int)_threads);");
+        if (k.ThreadsPerBlock > 0 && k.BlocksPerGrid > 0)
+        {
+            sb.AppendLine($"            uint _threads = {k.ThreadsPerBlock};");
+            sb.AppendLine($"            uint _blocks = {k.BlocksPerGrid};");
+        }
+        else if (k.ThreadsPerBlock > 0)
+        {
+            sb.AppendLine($"            uint _threads = {k.ThreadsPerBlock};");
+            sb.AppendLine("            uint _blocks = (uint)((_n + (int)_threads - 1) / (int)_threads);");
+        }
+        else if (k.BlocksPerGrid > 0)
+        {
+            sb.AppendLine("            uint _threads = 256;");
+            sb.AppendLine($"            uint _blocks = {k.BlocksPerGrid};");
+        }
+        else
+        {
+            sb.AppendLine("            uint _threads = 256;");
+            sb.AppendLine("            uint _blocks = (uint)((_n + (int)_threads - 1) / (int)_threads);");
+        }
         sb.AppendLine();
         sb.AppendLine($"            CudaDriverApi.CheckResult(CudaDriverApi.cuLaunchKernel(");
         sb.AppendLine($"                _{k.MethodName}_func,");
@@ -1200,6 +1225,7 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         string sourceFilePath, string ns, string className, string methodName, string cudaFunctionName,
         string kernelSource, string arch, string extraFlags, string incPath,
         string paramList, CompileCudaKernelsTask.KernelParam[] @params, bool notImpl, string compression,
+        int threadsPerBlock = 0, int blocksPerGrid = 0,
         string? validationWarning = null)
     {
         public string SourceFilePath { get; } = sourceFilePath; public string Namespace { get; } = ns; public string ClassName { get; } = className;
@@ -1213,6 +1239,8 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
         public string KernelSource { get; } = kernelSource; public string Arch { get; } = arch;
         public string ExtraFlags { get; } = extraFlags; public string IncludePath { get; } = incPath; public string ParameterList { get; } = paramList;
         public KernelParam[] Params { get; } = @params; public bool NotImplemented { get; } = notImpl; public string Compression { get; } = compression;
+        public int ThreadsPerBlock { get; } = threadsPerBlock;
+        public int BlocksPerGrid { get; } = blocksPerGrid;
         /// <summary>Non-null when a name or arg-count mismatch was detected at parse time.</summary>
         public string? ValidationWarning { get; } = validationWarning;
     }

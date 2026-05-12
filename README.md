@@ -63,10 +63,9 @@ public partial class MyKernels
 ### 3 — Call it like any C# method
 
 ```csharp
-using var ctx    = new CudaContext();          // initialises the CUDA Driver API
-using var stream = new CudaStream();
+using var ctx = CudaContext.Initialize();  // initialises the CUDA Driver API
 
-const int N = 1 << 20;                        // 1M elements
+const int N = 1 << 20;                    // 1M elements
 
 using var dA = CudaBuffer<float>.Allocate(N);
 using var dB = CudaBuffer<float>.Allocate(N);
@@ -79,12 +78,18 @@ dA.CopyFromHost(hA);
 dB.CopyFromHost(hB);
 
 var kernels = new MyKernels();
-kernels.AddVectors(dA, dB, dC, stream: stream);   // generated launch wrapper
+kernels.AddVectors(dA, dB, dC);   // generated launch wrapper
 
 float[] result = new float[N];
 dC.CopyToHost(result);
 Console.WriteLine(result[0]);   // 0.0 + 0.0 = 0.0 ✓
 ```
+
+> **Multithreaded / parallel usage** — CUDA Driver API contexts are thread-local.
+> If you share a single `CudaContext` across threads (e.g. in a test suite with parallel
+> test execution), call `ctx.MakeCurrent()` at the start of each thread before issuing
+> any GPU operations. `CudaContext.Initialize()` only makes the context current on the
+> thread that called it.
 
 No `cuModuleLoad`, no `cuLaunchKernel`, no kernel argument marshalling — **the MSBuild
 task writes all of that code for you**.
@@ -124,11 +129,22 @@ public partial void FlashAttn(
 
 ```csharp
 [GpuKernel("""...""",
-    Arch        = "compute_89",          // single arch — faster debug builds
-    ExtraFlags  = "-lineinfo -G",        // add device debug info
-    IncludePath = "vendor/cutlass/include")]
+    Arch           = "compute_89",          // single arch — faster debug builds
+    ExtraFlags     = "-lineinfo -G",        // add device debug info
+    IncludePath    = "vendor/cutlass/include",
+    ThreadsPerBlock = 128,                  // override default 256-thread blocks
+    BlocksPerGrid  = 4)]                   // or fix the block count entirely
 public partial void MyKernel(CudaBuffer<float> a, CudaBuffer<float> b);
 ```
+
+The `ThreadsPerBlock` / `BlocksPerGrid` properties control the `cuLaunchKernel` grid:
+
+| `ThreadsPerBlock` | `BlocksPerGrid` | Generated launch |
+|---|---|---|
+| 0 (default) | 0 (default) | `threads=256, blocks=ceil(n/256)` |
+| T | 0 | `threads=T, blocks=ceil(n/T)` |
+| 0 | B | `threads=256, blocks=B` |
+| T | B | `threads=T, blocks=B` (fully fixed — e.g. single-block scans) |
 
 ### Stub during development
 
@@ -332,6 +348,37 @@ all these defaults — no manual setup required.
 
 ## Real-World Kernel Examples
 
+### Inclusive prefix scan (single-block Hillis-Steele)
+
+```csharp
+[GpuKernel("""
+    extern "C" __global__ void PrefixScan(
+        const float* __restrict__ x,
+        float*       __restrict__ y,
+        int n)
+    {
+        // Single-block, shared-memory Hillis-Steele inclusive scan (≤256 elements).
+        __shared__ float smem[256];
+        int tid = threadIdx.x;
+        smem[tid] = (tid < n) ? x[tid] : 0.f;
+        __syncthreads();
+        for (int d = 1; d < blockDim.x; d <<= 1) {
+            float v = (tid >= d) ? smem[tid - d] : 0.f;
+            __syncthreads();
+            smem[tid] += v;
+            __syncthreads();
+        }
+        if (tid < n) y[tid] = smem[tid];
+    }
+    """, ThreadsPerBlock = 256, BlocksPerGrid = 1)]   // ← fixed single-block launch
+public partial void PrefixScan(CudaBuffer<float> x, CudaBuffer<float> y);
+```
+
+`ThreadsPerBlock = 256, BlocksPerGrid = 1` tells the generator to emit a literal
+`_threads=256; _blocks=1;` rather than the default auto-compute. This is required for
+any single-block cooperative algorithm (scans, reductions that use `__syncthreads`
+across the whole grid, etc.).
+
 ### Attention scores (transformer self-attention)
 
 ```csharp
@@ -425,6 +472,68 @@ no CUDA SDK installation needed on end-user machines.
 | `KernelSharp` | Runtime + build task: `CudaBuffer<T>`, `CudaContext`, `CudaStream`, Driver API P/Invokes, and the MSBuild task that compiles CUDA kernels at build time |
 
 A single package covers everything. No separate generator package is needed.
+
+> **Implementation note:** inside the package, the MSBuild task lives in
+> `build/KernelSharp.Build.dll` (a separate assembly from the runtime `KernelSharp.dll`).
+> This prevents the MSBuild host from locking `KernelSharp.dll` during builds,
+> allowing incremental rebuilds of the library itself without DLL-lock errors.
+
+---
+
+## Building from Source
+
+### Prerequisites
+
+| Tool | Notes |
+|---|---|
+| [.NET 10 SDK](https://dotnet.microsoft.com/download) | Required |
+| [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) (11.0+) | Required to compile `.cu` kernels; optional if you only work with `NotImplemented` stubs |
+| MSVC (Visual Studio 2019+) | Windows only — required by nvcc as host compiler; auto-detected via `vswhere` |
+
+### Repository layout
+
+```
+KernelSharp.Build/        ← MSBuild task (CompileCudaKernelsTask)
+                            packed into build/KernelSharp.Build.dll in the NuGet package
+KernelSharp/              ← Runtime library (CudaBuffer<T>, CudaContext, …)
+  build/
+    KernelSharp.props     ← auto-imported MSBuild properties
+    KernelSharp.targets   ← UsingTask + KernelSharp_CompileCudaKernels target
+KernelSharp.Samples/      ← example kernels
+KernelSharp.Tests/        ← unit + integration tests (TUnit)
+```
+
+### Build
+
+```sh
+dotnet build
+```
+
+Build order is `KernelSharp.Build` → `KernelSharp` → `KernelSharp.Samples` /
+`KernelSharp.Tests`. MSBuild respects the `ProjectReference` dependency chain, so
+`KernelSharp.Build.dll` is always ready before the task is needed.
+
+### Run tests
+
+```sh
+dotnet test
+```
+
+Tests that require a physical GPU are skipped automatically when no CUDA-capable
+device is detected. The code-generation tests (`SourceGeneratorTests`) run without a
+GPU.
+
+### Pack
+
+```sh
+dotnet pack KernelSharp/KernelSharp.csproj -c Release
+```
+
+The produced `.nupkg` contains:
+- `lib/net10.0/KernelSharp.dll` — runtime assembly
+- `build/KernelSharp.targets` — MSBuild target
+- `build/KernelSharp.props` — MSBuild properties
+- `build/KernelSharp.Build.dll` — MSBuild task assembly (loaded by MSBuild, never by end-user code)
 
 ---
 

@@ -683,4 +683,105 @@ public class SourceGeneratorTests
         await Assert.That(files[0]).Contains("\"cuda_scale\"")
             .Because("cuModuleGetFunction must use the actual CUDA function name, not the C# method name");
     }
+
+    // ── ThreadsPerBlock / BlocksPerGrid ───────────────────────────────────────
+
+    [Test]
+    public async Task Generator_DefaultLaunchConfig_Uses256ThreadsAndAutoBlocks()
+    {
+        // When neither ThreadsPerBlock nor BlocksPerGrid is specified the generator
+        // must emit the standard ceil(n/256) block count with 256 threads.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void DefaultKernel(float* b, int n) {}")]
+                public partial void DefaultKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
+
+        await Assert.That(generated).Contains("uint _threads = 256;");
+        await Assert.That(generated).Contains("uint _blocks = (uint)((_n + (int)_threads - 1) / (int)_threads);");
+    }
+
+    [Test]
+    public async Task Generator_FixedThreadsPerBlock_EmitsLiteralThreadCount()
+    {
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void FixedThreadKernel(float* b, int n) {}", ThreadsPerBlock = 512)]
+                public partial void FixedThreadKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
+
+        await Assert.That(generated).Contains("uint _threads = 512;");
+        await Assert.That(generated).Contains("uint _blocks = (uint)((_n + (int)_threads - 1) / (int)_threads);");
+    }
+
+    [Test]
+    public async Task Generator_FixedBlocksPerGrid_EmitsLiteralBlockCount()
+    {
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void FixedBlockKernel(float* b, int n) {}", BlocksPerGrid = 1)]
+                public partial void FixedBlockKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
+
+        await Assert.That(generated).Contains("uint _threads = 256;");
+        await Assert.That(generated).Contains("uint _blocks = 1;");
+    }
+
+    [Test]
+    public async Task Generator_FullyFixedLaunchConfig_EmitsNoAutoCompute()
+    {
+        // When both are set the generator must emit two literal assignments
+        // and must NOT emit the auto-compute expression.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void SingleBlockKernel(float* b, int n) {}",
+                    ThreadsPerBlock = 256, BlocksPerGrid = 1)]
+                public partial void SingleBlockKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var files = GenerateSources(src);
+        string generated = string.Concat(files);
+
+        await Assert.That(generated).Contains("uint _threads = 256;");
+        await Assert.That(generated).Contains("uint _blocks = 1;");
+        await Assert.That(generated).DoesNotContain("_n + (int)_threads - 1")
+            .Because("auto-compute must not appear when both values are fixed");
+    }
+
+    [Test]
+    public async Task Generator_ThreadsPerBlock_DoesNotAffectOtherKernels()
+    {
+        // Two kernels in the same class; only one has a custom ThreadsPerBlock.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class M {
+                [GpuKernel("extern \"C\" __global__ void KernelDefault(float* b, int n) {}")]
+                public partial void KernelDefault(CudaBuffer<float> b);
+                [GpuKernel("extern \"C\" __global__ void KernelCustom(float* b, int n) {}", ThreadsPerBlock = 128)]
+                public partial void KernelCustom(CudaBuffer<float> b);
+            }}
+            """;
+        var files = GenerateSources(src);
+
+        string? fileDefault = files.FirstOrDefault(s => s.Contains("KernelDefault") && !s.Contains("KernelCustom"));
+        string? fileCustom  = files.FirstOrDefault(s => s.Contains("KernelCustom")  && !s.Contains("KernelDefault"));
+
+        await Assert.That(fileDefault).IsNotNull();
+        await Assert.That(fileCustom).IsNotNull();
+        await Assert.That(fileDefault!).Contains("uint _threads = 256;");
+        await Assert.That(fileCustom!).Contains("uint _threads = 128;");
+    }
 }

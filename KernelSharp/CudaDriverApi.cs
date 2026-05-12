@@ -44,6 +44,10 @@ public static partial class CudaDriverApi
 
     [LibraryImport(LibName)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial CuResult cuCtxSetCurrent(IntPtr ctx);
+
+    [LibraryImport(LibName)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial CuResult cuCtxGetCurrent(out IntPtr ctx);
 
     // ── Module (fatbin / PTX load) ──────────────────────────────────────────

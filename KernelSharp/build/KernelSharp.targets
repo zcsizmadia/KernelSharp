@@ -17,15 +17,15 @@
          Local project  — KernelSharp.dll lives in bin/$(Configuration)/net10.0/
                           relative to the KernelSharp project folder.             -->
   <PropertyGroup>
-    <!-- NuGet package scenario: DLL sits next to this .targets file -->
+    <!-- NuGet package scenario: KernelSharp.Build.dll sits next to this .targets file -->
     <_KernelSharpBuildAssembly
-        Condition="'$(_KernelSharpBuildAssembly)' == '' And Exists('$(MSBuildThisFileDirectory)KernelSharp.dll')"
-    >$(MSBuildThisFileDirectory)KernelSharp.dll</_KernelSharpBuildAssembly>
+        Condition="'$(_KernelSharpBuildAssembly)' == '' And Exists('$(MSBuildThisFileDirectory)KernelSharp.Build.dll')"
+    >$(MSBuildThisFileDirectory)KernelSharp.Build.dll</_KernelSharpBuildAssembly>
 
-    <!-- Local project-reference scenario: DLL is in the build output folder -->
+    <!-- Local project-reference scenario: DLL is in the KernelSharp.Build project output folder -->
     <_KernelSharpBuildAssembly
         Condition="'$(_KernelSharpBuildAssembly)' == ''"
-    >$(MSBuildThisFileDirectory)..\bin\$(Configuration)\net10.0\KernelSharp.dll</_KernelSharpBuildAssembly>
+    >$(MSBuildThisFileDirectory)..\..\KernelSharp.Build\bin\$(Configuration)\net10.0\KernelSharp.Build.dll</_KernelSharpBuildAssembly>
   </PropertyGroup>
 
   <UsingTask

@@ -75,4 +75,18 @@ public sealed class GpuKernelAttribute(string source = "") : Attribute
     /// source file so the loader always decodes correctly regardless of project settings.
     /// </summary>
     public string Compression { get; init; } = "";
+
+    /// <summary>
+    /// Number of CUDA threads per block used in the generated <c>cuLaunchKernel</c> call.
+    /// 0 (default) lets the generator use 256.
+    /// Must be a multiple of 32 and ≤ 1024.
+    /// </summary>
+    public int ThreadsPerBlock { get; init; } = 0;
+
+    /// <summary>
+    /// Fixed number of blocks in the X-dimension of the grid.
+    /// 0 (default) auto-computes as <c>ceil(n / ThreadsPerBlock)</c>.
+    /// Set to 1 for single-block kernels such as inclusive prefix scans.
+    /// </summary>
+    public int BlocksPerGrid { get; init; } = 0;
 }

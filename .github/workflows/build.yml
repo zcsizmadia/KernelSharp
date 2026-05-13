@@ -40,6 +40,7 @@ jobs:
         run: |
           conda install -c nvidia "cuda-nvrtc-dev=${{ matrix.cuda }}.*" -y
           echo $CONDA_PREFIX
+          find $CONDA_PREFIX
           echo "CUDA_PATH=$CONDA_PREFIX" >> $GITHUB_ENV
 
       # Set up .NET SDKs

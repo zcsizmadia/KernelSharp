@@ -318,7 +318,7 @@ all these defaults — no manual setup required.
 
 | Code | Severity | Meaning |
 |---|---|---|
-| `KERNELSHARP001` | Warning | NVRTC library not found — kernel compilation skipped, kernels will fail at runtime |
+| `KERNELSHARP001` | Error | NVRTC library not found — BuildTime kernels cannot be compiled. Install the CUDA Toolkit and ensure `CUDA_PATH` is set, or set `KERNELSHARP_CUDA_PATH`. |
 | `KERNELSHARP002` | Error | NVRTC reported a compilation error — build fails with the NVRTC error log |
 | `KERNELSHARP003` | Warning | Mismatch between the `__global__` function name or parameter count in the CUDA source and the C# method declaration. The actual CUDA function name is still used for `cuModuleGetFunction`; this warning just flags the inconsistency so it can be fixed before it causes a runtime error. |
 

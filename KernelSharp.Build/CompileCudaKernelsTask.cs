@@ -152,9 +152,8 @@ public sealed class CompileCudaKernelsTask : Microsoft.Build.Utilities.Task, ICa
             }
             catch (Exception ex)
             {
-                Log.LogWarning(null, "KERNELSHARP001", null, null, 0, 0, 0, 0,
-                    "KernelSharp: NVRTC library not found — BuildTime kernels will have empty PTX " +
-                    "and will fail at runtime. " +
+                Log.LogError(null, "KERNELSHARP001", null, null, 0, 0, 0, 0,
+                    "KernelSharp: NVRTC library not found — BuildTime kernels cannot be compiled. " +
                     "Install the CUDA Toolkit and ensure CUDA_PATH is set, " +
                     $"or set KERNELSHARP_CUDA_PATH. ({ex.Message})");
             }

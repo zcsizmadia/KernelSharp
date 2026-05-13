@@ -4,6 +4,8 @@
     <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
     <RootNamespace>KernelSharp.Build</RootNamespace>
     <AssemblyName>KernelSharp.Build</AssemblyName>
+    <!-- Switches NvrtcApi.cs into its internal KernelSharp.Build variant -->
+    <DefineConstants>$(DefineConstants);KERNELSHARP_BUILD_TASK</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,6 +13,9 @@
       <_Parameter1>KernelSharp.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <!-- Shared NVRTC binding sources compiled into both this DLL and KernelSharp.dll -->
+  <Import Project="..\KernelSharp.Nvrtc\KernelSharp.Nvrtc.projitems" Label="Shared" />
 
   <ItemGroup>
     <!-- MSBuild Task API — compile-time only; the build host provides these at runtime -->

@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="KernelSharp.Build/KernelSharp.Build.csproj" />
   <Project Path="KernelSharp/KernelSharp.csproj" />
+  <Project Path="KernelSharp.Nvrtc/KernelSharp.Nvrtc.shproj" />
   <Project Path="KernelSharp.Samples/KernelSharp.Samples.csproj" />
   <Project Path="KernelSharp.Tests/KernelSharp.Tests.csproj" />
 </Solution>

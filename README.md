@@ -3,12 +3,15 @@
 > **Write CUDA kernels in C#. Compile at build time. Ship as a NuGet package.**
 
 KernelSharp is a .NET library that lets you write CUDA C/C++ kernels
-**directly inside your C# source files** — no cmake, no separate `.cu` build system, no runtime
-JIT overhead, no CUDA Runtime API boilerplate. Annotate a `partial` method with
-`[GpuKernel]`, write the kernel inline with a raw string literal, and by the time your
-project finishes building the kernel is **compiled, multi-arch, gzip-optionally-compressed,
-and embedded directly in your assembly**. Runtime dispatch happens through the CUDA Driver
-API with zero managed allocations on the hot path.
+**directly inside your C# source files** — no cmake, no separate `.cu` build system, no
+Visual Studio or nvcc required, no runtime JIT overhead, no CUDA Runtime API boilerplate.
+Annotate a `partial` method with `[GpuKernel]`, write the kernel inline with a raw string
+literal, and by the time your project finishes building the kernel is **compiled, optionally
+brotli-compressed, and embedded directly in your assembly**. Runtime dispatch happens through
+the CUDA Driver API with zero managed allocations on the hot path.
+
+Compilation uses **NVRTC** (NVIDIA Runtime Compilation) — an in-process library that ships
+with the CUDA Toolkit. No subprocess, no `cl.exe`, no nvcc path detection needed.
 
 ---
 
@@ -17,11 +20,11 @@ API with zero managed allocations on the hot path.
 | Feature | KernelSharp | Typical CUDA .NET wrapper |
 |---|---|---|
 | Kernel source lives next to its C# caller | ✅ inline raw string | ❌ separate .cu / .ptx file |
-| Build-time nvcc compilation | ✅ MSBuild task, parallel | ❌ manual CMake / MSBuild targets |
-| Multi-arch fatbin (Ampere, Ada, Hopper …) | ✅ automatic | ❌ per-arch manual flags |
+| Build-time compilation, no subprocess | ✅ NVRTC in-process | ❌ manual CMake / MSBuild targets |
+| No Visual Studio / cl.exe dependency | ✅ NVRTC only | ❌ VS + MSVC required on Windows |
+| Runtime compilation to native GPU arch | ✅ `Compilation = Runtime` mode | ❌ N/A |
 | Strongly-typed device buffers | ✅ `CudaBuffer<T>` | ❌ raw `IntPtr` |
-| Zero-config compiler auto-detection | ✅ nvcc + MSVC auto-discovered | ❌ path config required |
-| NuGet-installable, no CUDA SDK at runtime | ✅ fatbin embedded in DLL | ❌ SDK / driver headers required |
+| NuGet-installable, no CUDA SDK at runtime | ✅ PTX embedded in DLL | ❌ SDK / driver headers required |
 | Parallel kernel compilation | ✅ all cores | ❌ N/A |
 | Single NuGet package | ✅ runtime + build task in one | ❌ separate packages |
 
@@ -36,7 +39,7 @@ API with zero managed allocations on the hot path.
 ```
 
 A single package provides both the runtime (`CudaBuffer<T>`, `CudaContext`, …) and the
-MSBuild task that invokes nvcc at build time.
+MSBuild task that invokes NVRTC at build time.
 
 ### 2 — Write your first kernel
 
@@ -129,11 +132,13 @@ public partial void FlashAttn(
 
 ```csharp
 [GpuKernel("""...""",
-    Arch           = "compute_89",          // single arch — faster debug builds
-    ExtraFlags     = "-lineinfo -G",        // add device debug info
+    Arch           = "compute_89",          // single arch for build-time compilation
+    ExtraFlags     = "-lineinfo",           // NVRTC options
     IncludePath    = "vendor/cutlass/include",
-    ThreadsPerBlock = 128,                  // override default 256-thread blocks
-    BlocksPerGrid  = 4)]                   // or fix the block count entirely
+    Compression    = "none",               // "brotli" (default), "gzip", "zlib", "deflate", "none"
+    Compilation    = KernelCompilation.Runtime,  // per-kernel mode override
+    ThreadsPerBlock = 128,                 // override default 256-thread blocks
+    BlocksPerGrid  = 4)]                  // or fix the block count entirely
 public partial void MyKernel(CudaBuffer<float> a, CudaBuffer<float> b);
 ```
 
@@ -151,7 +156,7 @@ The `ThreadsPerBlock` / `BlocksPerGrid` properties control the `cuLaunchKernel` 
 ```csharp
 [GpuKernel("""...""", NotImplemented = true)]
 public partial void ExperimentalKernel(CudaBuffer<float> x);
-// → throws NotImplementedException at runtime; nvcc is never invoked at build time
+// → throws NotImplementedException at runtime; NVRTC is never invoked at build time
 ```
 
 ---
@@ -215,12 +220,13 @@ dotnet build
            ├─ Classifies each parameter:
            │     CudaBuffer<T>  → Buffer  → extract .DevicePointer
            │     int/float/...  → Scalar  → pass value directly
-           ├─ Spawns nvcc processes in parallel (all CPU cores by default)
-           │     one process per [GpuKernel] method
-           ├─ Collects resulting fatbin bytes
-           ├─ Optionally gzip-compresses the fatbin
+           ├─ Calls NVRTC in-process (parallel, all CPU cores by default)
+           │     one NVRTC program handle per [GpuKernel] method
+           ├─ Collects resulting PTX bytes
+           ├─ Optionally compresses the PTX (brotli by default)
            └─ Emits  MyClass.MyMethod.g.cs  containing:
-                  • static readonly byte[] _fatbin = { … };
+                  • static readonly byte[] _ptx_encoded = { … };
+                  • static byte[]  _ptx = KernelBlobHelper.Decode(…);
                   • static IntPtr _module, _func;
                   • public partial void MyMethod(…) { … cuLaunchKernel(…) }
 
@@ -228,19 +234,15 @@ dotnet build
            → single assembly, zero external resources
 ```
 
-The generated file includes a build-metadata comment showing the exact nvcc command line
-that produced the fatbin, compiler versions, and the date — making the build fully
-reproducible and auditable.
-
 ### Incremental builds
 
 The MSBuild task uses timestamp-based incremental compilation. If a kernel's source file
-hasn't changed since the last build, nvcc is not re-invoked. Cold builds (all kernels
+hasn't changed since the last build, NVRTC is not re-invoked. Cold builds (all kernels
 new) compile in parallel; warm builds (no changes) add essentially zero overhead.
 
 ---
 
-## Checking In Generated Files (CI without nvcc)
+## Checking In Generated Files (CI without NVRTC)
 
 By default the generated `.g.cs` launcher files are written to `$(IntermediateOutputPath)`
 and are not committed to source control. If you want build machines that don't have CUDA
@@ -249,49 +251,28 @@ committed folder:
 
 ```xml
 <PropertyGroup>
-  <!-- Commit generated launchers so CI machines without nvcc can compile -->
+  <!-- Commit generated launchers so CI machines without NVRTC can compile -->
   <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath>
 </PropertyGroup>
 ```
 
 When this property is set:
 - Generated `.g.cs` files are written to (and read from) that folder instead of `obj/`.
-- nvcc is still skipped when the generated file is **newer** than the source `.cs` file.
-- Machines without nvcc can compile using the checked-in launchers.
+- NVRTC is still skipped when the generated file is **newer** than the source `.cs` file.
+- Machines without the CUDA Toolkit can compile using the checked-in launchers.
 
 ---
 
-## Compiler Auto-Detection
+## NVRTC Library Discovery
 
-KernelSharp finds your compilers automatically — no path configuration required for most
-setups. Configuration properties are available for unusual installations.
+KernelSharp locates the NVRTC library automatically. Search order:
 
-### nvcc detection order
-
-1. `CUDA_PATH` environment variable → `$CUDA_PATH/bin/nvcc`
-2. `CUDA_TOOLKIT_ROOT_DIR` environment variable → `$CUDA_TOOLKIT_ROOT_DIR/bin/nvcc`
-3. `PATH` — each entry is checked for `nvcc` / `nvcc.exe`
-4. **Windows** — `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v*\bin\nvcc.exe`  
-   (all installed versions, newest first)
-5. **Linux** — `/usr/local/cuda/bin/nvcc`, then `/usr/bin/nvcc`
-
-### MSVC `cl.exe` detection order (Windows only)
-
-nvcc requires a compatible host C++ compiler on Windows. KernelSharp finds it without
-needing Visual Studio to be open or any environment pre-activation:
-
-1. `KernelSharpMsvcClPath` MSBuild property — explicit full path or directory
-2. `VCToolsInstallDir` environment variable (set by `vcvarsall.bat`)
-3. **vswhere** — `%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe`  
-   Queries the latest pre-release or stable VS installation, enumerates MSVC toolchain
-   versions inside it (newest first)
-4. **Directory scan** — walks `%ProgramFiles%\Microsoft Visual Studio\` and
-   `%ProgramFiles(x86)%\Microsoft Visual Studio\`, year directories newest-first,
-   edition directories newest-first (Enterprise → Preview → Community …),
-   MSVC toolchain versions newest-first
-5. `PATH` — last resort, checks each entry for `cl.exe`
-
-On Linux, GCC is picked up by nvcc automatically; no host compiler detection is needed.
+1. `KERNELSHARP_CUDA_PATH` environment variable
+2. `CUDA_PATH` environment variable
+3. `CUDA_TOOLKIT_ROOT_DIR` environment variable
+4. `PATH` entries
+5. **Windows**: `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v*\bin\nvrtc64_*.dll` (newest first)
+6. **Linux**: `/usr/local/cuda/lib64/libnvrtc.so`, then `/usr/lib/x86_64-linux-gnu/libnvrtc.so.*`
 
 ---
 
@@ -302,29 +283,26 @@ All settings have sensible defaults. Override only what you need:
 ```xml
 <!-- In your .csproj or Directory.Build.props -->
 <PropertyGroup>
-  <!-- Path to the CUDA include root (if not in CUDA_PATH) -->
+  <!-- Path to an extra CUDA include directory -->
   <KernelSharpIncludePath>C:\libs\cuda\include</KernelSharpIncludePath>
 
-  <!-- C++ standard: c++14, c++17, c++20 (default: c++20) -->
-  <KernelSharpNvccStd>c++20</KernelSharpNvccStd>
+  <!-- Minimum PTX virtual architecture for build-time compilation.
+       Default: compute_75 (Turing, 2018+). The driver JIT-compiles PTX to native SASS.
+       Accepts: "compute_75", "sm_89", bare "80", etc. -->
+  <KernelSharpMinArch>compute_80</KernelSharpMinArch>
 
-  <!-- Extra nvcc flags for every kernel in this project -->
-  <KernelSharpNvccExtraFlags>-lineinfo</KernelSharpNvccExtraFlags>
+  <!-- Extra NVRTC options for every kernel in this project (space-separated).
+       Per-kernel overrides go in [GpuKernel(ExtraFlags = "…")]. -->
+  <KernelSharpExtraOptions>-lineinfo</KernelSharpExtraOptions>
 
-  <!-- Explicit cl.exe path; auto-detected via vswhere when empty (Windows only) -->
-  <KernelSharpMsvcClPath></KernelSharpMsvcClPath>
+  <!-- Default compilation mode: BuildTime (default) or Runtime -->
+  <KernelSharpCompilation>BuildTime</KernelSharpCompilation>
 
-  <!-- Comma-separated target architectures
-       Default: compute_75 (Turing), compute_80 (Ampere), compute_89 (Ada),
-                compute_90 (Hopper), compute_100 (Blackwell, requires CUDA 12.8+)
-       Use a single arch for faster debug builds -->
-  <KernelSharpTargetArchs>compute_75,compute_80,compute_89,compute_90,compute_100</KernelSharpTargetArchs>
-
-  <!-- Max parallel nvcc processes; empty = all CPU cores -->
+  <!-- Max parallel NVRTC compilations; empty = all CPU cores -->
   <KernelSharpMaxParallelism>4</KernelSharpMaxParallelism>
 
-  <!-- Fatbin embedding: gzip (default, ~50% smaller) or none (raw bytes) -->
-  <KernelSharpFatbinCompression>gzip</KernelSharpFatbinCompression>
+  <!-- PTX embedding compression: brotli (default, best ratio), gzip, zlib, deflate, or none -->
+  <KernelSharpPtxCompression>brotli</KernelSharpPtxCompression>
 
   <!-- Optional: write generated .g.cs files to a committed folder (see above) -->
   <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath>
@@ -340,8 +318,8 @@ all these defaults — no manual setup required.
 
 | Code | Severity | Meaning |
 |---|---|---|
-| `KERNELSHARP001` | Warning | nvcc not found — kernel compilation skipped, kernels will fail at runtime |
-| `KERNELSHARP002` | Error | nvcc exited with a non-zero code — build fails with the nvcc error output |
+| `KERNELSHARP001` | Warning | NVRTC library not found — kernel compilation skipped, kernels will fail at runtime |
+| `KERNELSHARP002` | Error | NVRTC reported a compilation error — build fails with the NVRTC error log |
 | `KERNELSHARP003` | Warning | Mismatch between the `__global__` function name or parameter count in the CUDA source and the C# method declaration. The actual CUDA function name is still used for `cuModuleGetFunction`; this warning just flags the inconsistency so it can be fixed before it causes a runtime error. |
 
 ---
@@ -454,10 +432,10 @@ public partial void EmbedLookup(
 
 | | Windows | Linux |
 |---|---|---|
-| Host compiler | MSVC (VS 2019+, auto-detected) | GCC (picked up by nvcc) |
-| nvcc version | CUDA 11.0+ | CUDA 11.0+ |
+| NVRTC (build-time) | `nvrtc64_*.dll` (CUDA Toolkit 11+) | `libnvrtc.so` (CUDA Toolkit 11+) |
+| CUDA Driver (runtime) | `nvcuda.dll` (display driver) | `libcuda.so` (display driver) |
 | .NET target | net8.0, net9.0, net10.0 | net8.0, net9.0, net10.0 |
-| GPU architectures | sm_70 and newer | sm_70 and newer |
+| Visual Studio / cl.exe | ❌ not required | ❌ not required |
 
 The **CUDA Runtime API is not required** at runtime. KernelSharp uses only the
 CUDA Driver API (`nvcuda.dll` / `libcuda.so`), which ships with the display driver —
@@ -469,7 +447,7 @@ no CUDA SDK installation needed on end-user machines.
 
 | Package | Purpose |
 |---|---|
-| `KernelSharp` | Runtime + build task: `CudaBuffer<T>`, `CudaContext`, `CudaStream`, Driver API P/Invokes, and the MSBuild task that compiles CUDA kernels at build time |
+| `KernelSharp` | Runtime + build task: `CudaBuffer<T>`, `CudaContext`, `CudaStream`, Driver API P/Invokes, NVRTC bindings, and the MSBuild task that compiles CUDA kernels at build time |
 
 A single package covers everything. No separate generator package is needed.
 
@@ -477,6 +455,7 @@ A single package covers everything. No separate generator package is needed.
 > `build/KernelSharp.Build.dll` (a separate assembly from the runtime `KernelSharp.dll`).
 > This prevents the MSBuild host from locking `KernelSharp.dll` during builds,
 > allowing incremental rebuilds of the library itself without DLL-lock errors.
+> Both assemblies share NVRTC bindings via the `KernelSharp.Nvrtc` shared project.
 
 ---
 
@@ -487,14 +466,17 @@ A single package covers everything. No separate generator package is needed.
 | Tool | Notes |
 |---|---|
 | [.NET 10 SDK](https://dotnet.microsoft.com/download) | Required |
-| [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) (11.0+) | Required to compile `.cu` kernels; optional if you only work with `NotImplemented` stubs |
-| MSVC (Visual Studio 2019+) | Windows only — required by nvcc as host compiler; auto-detected via `vswhere` |
+| [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) (11.0+) | Required to compile `.cu` kernels at build time; `nvrtc64_*.dll` (Windows) or `libnvrtc.so` (Linux) must be discoverable |
+
+No Visual Studio or MSVC required on any platform.
 
 ### Repository layout
 
 ```
 KernelSharp.Build/        ← MSBuild task (CompileCudaKernelsTask)
                             packed into build/KernelSharp.Build.dll in the NuGet package
+KernelSharp.Nvrtc/        ← Shared project: NVRTC P/Invoke bindings
+                            compiled into both KernelSharp.dll and KernelSharp.Build.dll
 KernelSharp/              ← Runtime library (CudaBuffer<T>, CudaContext, …)
   build/
     KernelSharp.props     ← auto-imported MSBuild properties

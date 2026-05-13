@@ -17,58 +17,65 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Path to the CUDA include directory (contains cuda.h, cuda_runtime.h …).
-         Auto-detected from CUDA_PATH / nvcc location when left empty.
+         Auto-detected from CUDA_PATH when left empty.
          Example: <KernelSharpIncludePath>C:\cuda\include</KernelSharpIncludePath> -->
     <KernelSharpIncludePath Condition="'$(KernelSharpIncludePath)' == ''"></KernelSharpIncludePath>
 
-    <!-- C++ standard passed to nvcc.  c++20 is the default and recommended.
-         Example: <KernelSharpNvccStd>c++17</KernelSharpNvccStd> -->
-    <KernelSharpNvccStd Condition="'$(KernelSharpNvccStd)' == ''">c++20</KernelSharpNvccStd>
-
-    <!-- Extra nvcc flags appended to every kernel compilation in this project.
-         Per-kernel overrides go in [GpuKernel(ExtraFlags = "…")].
-         Example: <KernelSharpNvccExtraFlags>-lineinfo</KernelSharpNvccExtraFlags> -->
-    <KernelSharpNvccExtraFlags Condition="'$(KernelSharpNvccExtraFlags)' == ''"></KernelSharpNvccExtraFlags>
-
-    <!-- Windows only: path to cl.exe used as nvcc host compiler.
-         Auto-detected via vswhere, VCToolsInstallDir env var, or PATH.
-         Example: <KernelSharpMsvcClPath>C:\VS\VC\Tools\MSVC\14.x\bin\HostX64\x64\cl.exe</KernelSharpMsvcClPath> -->
-    <KernelSharpMsvcClPath Condition="'$(KernelSharpMsvcClPath)' == ''"></KernelSharpMsvcClPath>
-
-    <!-- Comma-separated GPU architectures to embed SASS + PTX for.
-           compute_75  = Turing  (RTX 20xx / GTX 16xx, 2018+)
-           compute_80  = Ampere  (A100 / RTX 30xx, 2020+)
-           compute_89  = Ada     (RTX 40xx, 2022+)
-           compute_90  = Hopper  (H100, 2022+)
+    <!-- Minimum PTX virtual architecture for build-time (NVRTC) compilation.
+           compute_75  = Turing   (RTX 20xx / GTX 16xx, 2018+) — default
+           compute_80  = Ampere   (A100 / RTX 30xx, 2020+)
+           compute_89  = Ada      (RTX 40xx, 2022+)
+           compute_90  = Hopper   (H100, 2022+)
            compute_100 = Blackwell (RTX 50xx / B-series, 2024+; requires CUDA 12.8+)
-         For faster debug builds, restrict to one arch:
-           <KernelSharpTargetArchs>compute_89</KernelSharpTargetArchs> -->
-    <KernelSharpTargetArchs Condition="'$(KernelSharpTargetArchs)' == ''">compute_75,compute_80,compute_89,compute_90,compute_100</KernelSharpTargetArchs>
+         The driver JIT-compiles the PTX to native SASS on the first run and caches it.
+         Accepts any form NVRTC understands: "compute_75", "sm_89", or bare "80".
+         Example: <KernelSharpMinArch>compute_80</KernelSharpMinArch> -->
+    <KernelSharpMinArch Condition="'$(KernelSharpMinArch)' == ''">compute_75</KernelSharpMinArch>
 
-    <!-- Maximum parallel nvcc processes during build.
+    <!-- Extra NVRTC options appended to every kernel compilation in this project
+         (space-separated).  Per-kernel overrides go in [GpuKernel(ExtraFlags = "…")].
+         Example: <KernelSharpExtraOptions>-lineinfo -DMYMACRO=1</KernelSharpExtraOptions> -->
+    <KernelSharpExtraOptions Condition="'$(KernelSharpExtraOptions)' == ''"></KernelSharpExtraOptions>
+
+    <!-- Default compilation mode for all kernels in this project.
+           BuildTime (default) — NVRTC compiles CUDA source to PTX during dotnet build;
+                                 PTX is embedded in the assembly.  NVRTC must be installed
+                                 on the build machine (not required at runtime).
+           Runtime             — CUDA source is embedded as a string; NVRTC compiles
+                                 it to PTX on the first kernel call, using the native GPU
+                                 architecture.  No CUDA toolchain needed at build time.
+         Individual kernels may override with [GpuKernel(Compilation = KernelCompilation.Runtime)].
+         Example: <KernelSharpCompilation>Runtime</KernelSharpCompilation> -->
+    <KernelSharpCompilation Condition="'$(KernelSharpCompilation)' == ''">BuildTime</KernelSharpCompilation>
+
+    <!-- Maximum parallel NVRTC compilations during build.
          Empty (default) = all available CPU cores.
-         Set to 1 to serialise compilation when diagnosing nvcc errors.
+         Set to 1 to serialise compilation when diagnosing errors.
          Example: <KernelSharpMaxParallelism>4</KernelSharpMaxParallelism> -->
     <KernelSharpMaxParallelism Condition="'$(KernelSharpMaxParallelism)' == ''"></KernelSharpMaxParallelism>
 
-    <!-- Compression applied to the embedded fatbin byte array.
-           none           = raw bytes embedded as base64.
-           gzip (default) = compressed at build time, decompressed on first kernel call.
-         Example: <KernelSharpFatbinCompression>none</KernelSharpFatbinCompression> -->
-    <KernelSharpFatbinCompression Condition="'$(KernelSharpFatbinCompression)' == ''">gzip</KernelSharpFatbinCompression>
+    <!-- Compression applied to the embedded PTX byte array (BuildTime mode only).
+           brotli  (default) = best ratio, fast decompression (net8+).
+           gzip              = widely recognised, slightly larger than brotli.
+           zlib              = zlib framing around DEFLATE.
+           deflate           = raw DEFLATE (no framing).
+           none              = raw bytes embedded as base64, no decompression overhead.
+         Example: <KernelSharpPtxCompression>none</KernelSharpPtxCompression> -->
+    <KernelSharpPtxCompression Condition="'$(KernelSharpPtxCompression)' == ''">brotli</KernelSharpPtxCompression>
 
     <!-- Optional: write generated .g.cs files to this folder instead of $(IntermediateOutputPath).
-         Commit this folder to source control so build machines without nvcc can compile
-         from pre-built launchers.  nvcc is still skipped when the generated file is newer
-         than the source (.cs) file, so incremental builds remain efficient.
+         Commit this folder to source control so build machines without NVRTC can compile
+         from pre-built launchers.  Compilation is still skipped when the generated file is
+         newer than the source (.cs) file, so incremental builds remain efficient.
          Example: <KernelSharpGeneratedOutputPath>Generated\</KernelSharpGeneratedOutputPath> -->
     <KernelSharpGeneratedOutputPath Condition="'$(KernelSharpGeneratedOutputPath)' == ''"></KernelSharpGeneratedOutputPath>
+
     <!-- Verbosity level for KernelSharp build messages: "normal" (default) or "detailed".
-         "detailed" shows nvcc command lines and up-to-date skips at Normal importance,
-         so you can diagnose kernel compilation without raising the whole build verbosity.
+         "detailed" shows NVRTC command options and up-to-date skips at Normal importance.
          Example: <KernelSharpVerbosity>detailed</KernelSharpVerbosity> -->
     <KernelSharpVerbosity Condition="'$(KernelSharpVerbosity)' == ''">normal</KernelSharpVerbosity>
 
   </PropertyGroup>
 
 </Project>
+

@@ -44,12 +44,11 @@
     <KernelSharp.Build.CompileCudaKernelsTask
         CompileItems="@(Compile)"
         IncludePath="$(KernelSharpIncludePath)"
-        NvccStd="$(KernelSharpNvccStd)"
-        NvccExtraFlags="$(KernelSharpNvccExtraFlags)"
-        MsvcClPath="$(KernelSharpMsvcClPath)"
-        TargetArchs="$(KernelSharpTargetArchs)"
+        MinArch="$(KernelSharpMinArch)"
+        ExtraOptions="$(KernelSharpExtraOptions)"
         MaxParallelism="$(KernelSharpMaxParallelism)"
-        FatbinCompression="$(KernelSharpFatbinCompression)"
+        PtxCompression="$(KernelSharpPtxCompression)"
+        Compilation="$(KernelSharpCompilation)"
         IntermediateOutputPath="$(IntermediateOutputPath)"
         GeneratedOutputPath="$(KernelSharpGeneratedOutputPath)"
         Verbosity="$(KernelSharpVerbosity)">

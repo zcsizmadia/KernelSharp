@@ -4,12 +4,19 @@
     <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
     <RootNamespace>KernelSharp.Build</RootNamespace>
     <AssemblyName>KernelSharp.Build</AssemblyName>
+    <!-- Switches NvrtcApi.cs into its internal KernelSharp.Build variant -->
+    <DefineConstants>$(DefineConstants);KERNELSHARP_BUILD_TASK</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>KernelSharp.Tests</_Parameter1>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- NVRTC binding sources compiled into both this DLL and KernelSharp.dll -->
+  <ItemGroup>
+    <Compile Include="..\KernelSharp.Nvrtc\NvrtcApi.cs" Link="NvrtcApi.cs" />
   </ItemGroup>
 
   <ItemGroup>

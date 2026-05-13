@@ -1,35 +1,5 @@
 ﻿namespace KernelSharp;
 
-/// <summary>Source language of a GPU kernel string.</summary>
-public enum GpuLanguage
-{
-    /// <summary>NVIDIA CUDA C/C++ (compiled with <c>nvcc</c>).</summary>
-    Cuda = 0,
-}
-
-/// <summary>Compilation artifact emitted by the source generator.</summary>
-public enum GpuOutput
-{
-    /// <summary>
-    /// PTX virtual assembly (text). Platform-agnostic; JIT-compiled by the
-    /// NVIDIA driver at first use on the target GPU.
-    /// </summary>
-    Ptx = 0,
-
-    /// <summary>
-    /// Cubin binary for a specific GPU architecture.
-    /// Faster first-run but tied to a concrete SM version.
-    /// </summary>
-    Cubin = 1,
-
-    /// <summary>
-    /// Fatbinary containing compiled SASS for each targeted architecture plus
-    /// a PTX forward-compatibility fallback for future GPU generations.
-    /// This is the format produced and embedded by KernelSharp.
-    /// </summary>
-    Fatbin = 2,
-}
-
 /// <summary>
 /// CUDA device attribute identifiers for cuDeviceGetAttribute.
 /// Values match the CUdevice_attribute enum in the CUDA Driver API.

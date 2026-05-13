@@ -31,8 +31,7 @@
   <UsingTask
     TaskName="KernelSharp.Build.CompileCudaKernelsTask"
     AssemblyFile="$(_KernelSharpBuildAssembly)"
-    Runtime="NET"
-    Architecture="x64" />
+    Runtime="NET" />
 
   <!-- ── CompileCudaKernels target ────────────────────────────────────────────
        Runs before CoreCompile so the generated .cs files are visible to Roslyn.
@@ -44,12 +43,11 @@
     <KernelSharp.Build.CompileCudaKernelsTask
         CompileItems="@(Compile)"
         IncludePath="$(KernelSharpIncludePath)"
-        NvccStd="$(KernelSharpNvccStd)"
-        NvccExtraFlags="$(KernelSharpNvccExtraFlags)"
-        MsvcClPath="$(KernelSharpMsvcClPath)"
-        TargetArchs="$(KernelSharpTargetArchs)"
+        MinArch="$(KernelSharpMinArch)"
+        ExtraOptions="$(KernelSharpExtraOptions)"
         MaxParallelism="$(KernelSharpMaxParallelism)"
-        FatbinCompression="$(KernelSharpFatbinCompression)"
+        PtxCompression="$(KernelSharpPtxCompression)"
+        Compilation="$(KernelSharpCompilation)"
         IntermediateOutputPath="$(IntermediateOutputPath)"
         GeneratedOutputPath="$(KernelSharpGeneratedOutputPath)"
         Verbosity="$(KernelSharpVerbosity)">

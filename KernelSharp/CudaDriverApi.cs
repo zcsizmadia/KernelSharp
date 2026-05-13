@@ -50,12 +50,12 @@ public static partial class CudaDriverApi
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial CuResult cuCtxGetCurrent(out IntPtr ctx);
 
-    // ── Module (fatbin / PTX load) ──────────────────────────────────────────
+    // ── Module (PTX load) ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Load a module from an in-memory image — accepts a fatbinary or a
-    /// null-terminated PTX string.  The driver selects the best SASS code from
-    /// the fatbin, or JIT-compiles PTX when only virtual arch code is present.
+    /// Load a module from an in-memory image — accepts a null-terminated PTX
+    /// string. The driver JIT-compiles PTX to native SASS on the first call
+    /// and caches the result.
     /// </summary>
     [LibraryImport(LibName)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

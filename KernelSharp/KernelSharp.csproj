@@ -13,18 +13,23 @@
     <Title>KernelSharp — Write CUDA Kernels in C#</Title>
     <Description>
       Write CUDA C/C++ kernels inline inside C# source files using raw string literals, annotate
-      a partial method with [GpuKernel], and let the Roslyn source generator invoke nvcc at build
-      time. The resulting multi-arch fatbinary is embedded directly in your assembly — no separate
-      .ptx files, no CUDA Runtime API, no manual P/Invoke.  Supports strongly-typed CudaBuffer&lt;T&gt;
-      device pointers, parallel multi-kernel compilation, gzip-compressed fatbin embedding, and
-      zero-configuration GPU detection at runtime via the CUDA Driver API.
+      a partial method with [GpuKernel], and let the KernelSharp MSBuild task compile them with
+      NVRTC (NVIDIA Runtime Compilation) — no subprocess, no Visual Studio required. The compiled
+      PTX is embedded directly in your assembly. Supports build-time and runtime compilation modes,
+      strongly-typed CudaBuffer&lt;T&gt; device pointers, parallel multi-kernel compilation,
+      gzip-compressed PTX embedding, and zero-configuration GPU detection at runtime.
     </Description>
-    <PackageTags>cuda;gpu;kernels;nvcc;roslyn;sourcegenerator;hpc;ai;llm;dotnet;csharp;device;parallel</PackageTags>
+    <PackageTags>cuda;gpu;kernels;nvrtc;hpc;ai;llm;dotnet;csharp;device;parallel;ptx</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/zcsizmadia/KernelSharp</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
+
+  <!-- NVRTC binding sources compiled into both this DLL and KernelSharp.Build.dll -->
+  <ItemGroup>
+    <Compile Include="..\KernelSharp.Nvrtc\NvrtcApi.cs" Link="NvrtcApi.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- KernelSharp.Build contains the MSBuild task; built before this project.

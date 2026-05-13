@@ -2,9 +2,9 @@ namespace KernelSharp;
 
 /// <summary>
 /// Marks a <c>partial</c> method whose CUDA C/C++ implementation is provided inline
-/// or via a source file.  The KernelSharp source generator invokes <c>nvcc</c> at
-/// build time, embeds the resulting fatbinary directly in the assembly, and generates the
-/// method body that loads and dispatches the kernel via the CUDA Driver API at runtime.
+/// or via an external file.  The KernelSharp MSBuild task compiles the CUDA source to
+/// PTX using NVRTC, embeds the result in the assembly, and generates the method body
+/// that loads and dispatches the kernel via the CUDA Driver API at runtime.
 ///
 /// Usage – inline source (C# 11 raw string literal recommended):
 /// <code>
@@ -13,13 +13,19 @@ namespace KernelSharp;
 ///           const float* a, const float* b, float* c, int n)
 ///       { int i = blockIdx.x*blockDim.x+threadIdx.x; if(i&lt;n) c[i]=a[i]+b[i]; }
 ///       """)]
-///   public partial void AddVectors(CudaBuffer a, CudaBuffer b, CudaBuffer c);
+///   public partial void AddVectors(CudaBuffer&lt;float&gt; a, CudaBuffer&lt;float&gt; b, CudaBuffer&lt;float&gt; c);
 /// </code>
 ///
 /// Usage – external .cu file:
 /// <code>
 ///   [GpuKernel(SourceFile = "Kernels/flash_attn.cu")]
-///   public partial void FlashAttn(CudaBuffer q, CudaBuffer k, CudaBuffer v, CudaBuffer o);
+///   public partial void FlashAttn(CudaBuffer&lt;float&gt; q, CudaBuffer&lt;float&gt; k, CudaBuffer&lt;float&gt; v, CudaBuffer&lt;float&gt; o);
+/// </code>
+///
+/// Usage – runtime compilation (no build-time CUDA toolchain needed):
+/// <code>
+///   [GpuKernel("...", Compilation = KernelCompilation.Runtime)]
+///   public partial void MyKernel(CudaBuffer&lt;float&gt; b);
 /// </code>
 /// </summary>
 /// <param name="source">
@@ -44,37 +50,51 @@ public sealed class GpuKernelAttribute(string source = "") : Attribute
 
     /// <summary>
     /// Compile only this single architecture for this kernel, overriding the project-wide
-    /// KernelSharpTargetArchs list. Leave empty (default) to compile all target archs.
-    /// Examples: "compute_80", "sm_89", "80"
+    /// <c>KernelSharpMinArch</c> setting. Leave empty (default) to use the project default.
+    /// Examples: <c>"compute_80"</c>, <c>"sm_89"</c>, <c>"80"</c>.
+    /// For <see cref="KernelCompilation.BuildTime"/> this is the PTX virtual arch floor.
+    /// For <see cref="KernelCompilation.Runtime"/> leave empty to auto-detect the native SM.
     /// </summary>
     public string Arch { get; init; } = string.Empty;
 
     /// <summary>
-    /// Additional nvcc flags appended verbatim for this kernel only.
-    /// Project-wide extra flags live in KernelSharpNvccExtraFlags (Directory.Build.props).
+    /// Additional NVRTC options appended verbatim for this kernel only, space-separated.
+    /// Examples: <c>"-DMYMACRO=1"</c>, <c>"-lineinfo"</c>.
+    /// Project-wide extra options live in <c>KernelSharpExtraOptions</c> (Directory.Build.props).
     /// </summary>
     public string ExtraFlags { get; init; } = string.Empty;
 
     /// <summary>
-    /// Additional include path passed to nvcc for this kernel only, overriding the
-    /// project-wide KernelSharpIncludePath setting.
+    /// Additional include path passed to NVRTC for this kernel only, overriding the
+    /// project-wide <c>KernelSharpIncludePath</c> setting.
     /// </summary>
     public string IncludePath { get; init; } = string.Empty;
 
     /// <summary>
-    /// When <see langword="true"/>, the source generator skips nvcc entirely and emits
+    /// When <see langword="true"/>, skips compilation entirely and emits
     /// <c>throw new NotImplementedException()</c> as the method body.  Use this to stub
     /// out kernels that are not yet ready, so the rest of the project still compiles fast.
     /// </summary>
     public bool NotImplemented { get; init; } = false;
 
     /// <summary>
-    /// Per-kernel fatbin compression override.  Valid values: <c>"none"</c>, <c>"gzip"</c>.
-    /// Leave empty (default) to use the project-wide <c>KernelSharpFatbinCompression</c>
-    /// MSBuild property.  The compression format is stored as a constant in the generated
-    /// source file so the loader always decodes correctly regardless of project settings.
+    /// Per-kernel PTX embedding compression override.
+    /// Valid values: <c>"brotli"</c>, <c>"gzip"</c>, <c>"zlib"</c>, <c>"deflate"</c>, <c>"none"</c>.
+    /// Leave empty (default) to use the project-wide <c>KernelSharpPtxCompression</c>
+    /// MSBuild property.  Only applies to <see cref="KernelCompilation.BuildTime"/> kernels.
     /// </summary>
     public string Compression { get; init; } = "";
+
+    /// <summary>
+    /// Controls when the CUDA source is compiled to PTX.
+    /// <list type="bullet">
+    ///   <item><see cref="KernelCompilation.BuildTime"/> (default) — NVRTC at build time;
+    ///   PTX is embedded in the assembly.</item>
+    ///   <item><see cref="KernelCompilation.Runtime"/> — NVRTC at first kernel call;
+    ///   CUDA source is embedded as a string, native SM is detected automatically.</item>
+    /// </list>
+    /// </summary>
+    public KernelCompilation Compilation { get; init; } = KernelCompilation.BuildTime;
 
     /// <summary>
     /// Number of CUDA threads per block used in the generated <c>cuLaunchKernel</c> call.

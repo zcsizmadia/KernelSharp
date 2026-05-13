@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: "CUDA ${{ matrix.cuda }} / ${{ matrix.os }}"
+    name: "CUDA ${{ matrix.cuda }} / ${{ matrix.name }}"
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -18,6 +18,15 @@ jobs:
         os: ["windows-latest", "ubuntu-latest", "ubuntu-24.04-arm"]
 
         include:
+          - os: windows-latest
+            name: "Windows"
+
+          - os: ubuntu-latest
+            name: "Linux"
+
+          - os: ubuntu-24.04-arm
+            name: "Linux ARM64"
+
           - os: windows-latest
             cuda: 13.2
             # This is the job from the matrix to upload the nupkg artifacts.

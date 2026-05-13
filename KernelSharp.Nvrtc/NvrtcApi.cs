@@ -339,8 +339,11 @@ public static partial class NvrtcApi
                 }
                 else
                 {
-                    string lib64 = Path.GetFullPath(Path.Combine(dir, "..", "lib64"));
-                    string? hit  = FindLinuxLib(lib64);
+                    // entry might be a bin/ dir → check ../lib64 and ../lib
+                    string parent = Path.GetFullPath(Path.Combine(dir, ".."));
+                    string? hit = FindLinuxLib(Path.Combine(parent, "lib64"))
+                               ?? FindLinuxLib(Path.Combine(parent, "lib"))
+                               ?? FindLinuxLib(dir); // entry itself might be the lib dir
                     if (hit != null) return hit;
                 }
             }
@@ -364,9 +367,14 @@ public static partial class NvrtcApi
         }
         else
         {
-            foreach (string lib64 in new[] { "/usr/local/cuda/lib64", "/usr/lib/x86_64-linux-gnu" })
+            foreach (string lib in new[]
             {
-                string? hit = FindLinuxLib(lib64);
+                "/usr/local/cuda/lib64",
+                "/usr/local/cuda/lib",
+                "/usr/lib/x86_64-linux-gnu",
+            })
+            {
+                string? hit = FindLinuxLib(lib);
                 if (hit != null) return hit;
             }
         }
@@ -374,9 +382,15 @@ public static partial class NvrtcApi
         return string.Empty;
     }
 
-    private static string? FindInCudaRoot(string root, bool isWin) =>
-        isWin ? FindNvrtcDllInDir(Path.Combine(root, "bin"))
-              : FindLinuxLib(Path.Combine(root, "lib64"));
+    private static string? FindInCudaRoot(string root, bool isWin)
+    {
+        if (isWin)
+            return FindNvrtcDllInDir(Path.Combine(root, "bin"));
+
+        // conda installs to lib/ not lib64/; check both
+        return FindLinuxLib(Path.Combine(root, "lib64"))
+            ?? FindLinuxLib(Path.Combine(root, "lib"));
+    }
 
     private static string? FindNvrtcDllInDir(string dir)
     {

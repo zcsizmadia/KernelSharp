@@ -39,9 +39,18 @@ jobs:
         shell: bash -el {0}
         run: |
           conda install -c nvidia "cuda-nvrtc-dev=${{ matrix.cuda }}.*" -y
-          echo $CONDA_PREFIX
-          find $CONDA_PREFIX
-          echo "CUDA_PATH=$CONDA_PREFIX" >> $GITHUB_ENV
+
+          # On Windows conda puts the DLLs under $CONDA_PREFIX/Library/bin/
+          # so CUDA_PATH must point to $CONDA_PREFIX/Library (FindNvrtcLibrary
+          # appends /bin/ when looking for nvrtc64_*.dll).
+          # On Linux conda puts .so files under $CONDA_PREFIX/targets/x86_64-linux/lib/
+          # so CUDA_PATH must point to that directory's parent (FindNvrtcLibrary
+          # appends /lib/ and /lib64/).
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "CUDA_PATH=$CONDA_PREFIX/Library" >> $GITHUB_ENV
+          else
+            echo "CUDA_PATH=$CONDA_PREFIX/targets/x86_64-linux" >> $GITHUB_ENV
+          fi
 
       # Set up .NET SDKs
       - name: Install .NET SDKs

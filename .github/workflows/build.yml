@@ -8,37 +8,20 @@ on:
 
 jobs:
   build:
-    name: "CUDA ${{ matrix.cuda }} / ${{ matrix.label }}"
+    name: "CUDA ${{ matrix.cuda }} / ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
+        cuda: ["12.9", "13.2"]
+        os: ["windows-latest", "ubuntu-latest", "ubuntu-24.04-arm"]
+
         include:
           - os: windows-latest
-            cuda: "12.9"
-            label: "Windows"
-            
-          - os: windows-latest
-            cuda: "13.2"
-            label: "Windows"
+            cuda: 13.2
+            # This is the job from the matrix to upload the nupkg artifacts.
             upload_nupkgs: true
-          
-          - os: ubuntu-latest
-            cuda: "12.9"
-            label: "Linux"
-
-          - os: ubuntu-latest
-            cuda: "13.2"
-            label: "Linux"
-
-          - os: ubuntu-24.04-arm
-            cuda: "12.9"
-            label: "Linux ARM64"
-
-          - os: ubuntu-24.04-arm
-            cuda: "13.1"
-            label: "Linux ARM64"
 
     steps:
       - name: Checkout repository

@@ -26,8 +26,10 @@
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
-  <!-- Shared NVRTC binding sources compiled into both this DLL and KernelSharp.Build.dll -->
-  <Import Project="..\KernelSharp.Nvrtc\KernelSharp.Nvrtc.projitems" Label="Shared" />
+  <!-- NVRTC binding sources compiled into both this DLL and KernelSharp.Build.dll -->
+  <ItemGroup>
+    <Compile Include="..\KernelSharp.Nvrtc\NvrtcApi.cs" Link="NvrtcApi.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- KernelSharp.Build contains the MSBuild task; built before this project.

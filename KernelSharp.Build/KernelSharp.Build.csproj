@@ -14,8 +14,10 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <!-- Shared NVRTC binding sources compiled into both this DLL and KernelSharp.dll -->
-  <Import Project="..\KernelSharp.Nvrtc\KernelSharp.Nvrtc.projitems" Label="Shared" />
+  <!-- NVRTC binding sources compiled into both this DLL and KernelSharp.dll -->
+  <ItemGroup>
+    <Compile Include="..\KernelSharp.Nvrtc\NvrtcApi.cs" Link="NvrtcApi.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- MSBuild Task API — compile-time only; the build host provides these at runtime -->

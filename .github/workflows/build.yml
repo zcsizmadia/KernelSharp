@@ -38,14 +38,8 @@ jobs:
       - name: Install NVRTC
         shell: bash -el {0}
         run: |
-          conda install -c nvidia "cuda-nvrtc-dev=${{ matrix.cuda }}.*" -y
+          conda install -c nvidia "cuda-nvrtc-dev=${{ matrix.cuda }}.*" -y --quiet
 
-          # On Windows conda puts the DLLs under $CONDA_PREFIX/Library/bin/
-          # so CUDA_PATH must point to $CONDA_PREFIX/Library (FindNvrtcLibrary
-          # appends /bin/ when looking for nvrtc64_*.dll).
-          # On Linux conda puts .so files under $CONDA_PREFIX/targets/x86_64-linux/lib/
-          # so CUDA_PATH must point to that directory's parent (FindNvrtcLibrary
-          # appends /lib/ and /lib64/).
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             echo "CUDA_PATH=$CONDA_PREFIX/Library" >> $GITHUB_ENV
           else
@@ -64,6 +58,8 @@ jobs:
         run: |
           dotnet restore
           dotnet build -c Release --no-restore
+
+          grep -l -A 10 "ptx_encoded" KernelSharp.Samples/obj/Debug/net10.0/KernelSharp/*.g.cs
 
       - name: Test
         shell: bash

@@ -59,7 +59,8 @@ jobs:
           dotnet restore
           dotnet build -c Release --no-restore
 
-          grep -l -A 10 "ptx_encoded" KernelSharp.Samples/obj/Debug/net10.0/KernelSharp/*.g.cs
+          find KernelSharp.Samples/obj/Release/net10.0
+          grep -l -A 10 "ptx_encoded" KernelSharp.Samples/obj/Release/net10.0/KernelSharp/*.g.cs
 
       - name: Test
         shell: bash
@@ -75,6 +76,7 @@ jobs:
         shell: bash
         run: |
           dotnet build -c Release NupkgValidator/NupkgValidator.csproj
+          find NupkgValidator/obj/Release/net10.0
 
       - name: Upload NuGet packages
         if: matrix.upload_nupkgs == true

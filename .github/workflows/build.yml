@@ -36,9 +36,10 @@ jobs:
           use-mamba: true          # Highly recommended for speed on both OSs
 
       - name: Install NVRTC
-        shell: bash
+        shell: bash -el {0}
         run: |
           conda install -c nvidia "cuda-nvrtc-dev=${{ matrix.cuda }}.*" -y
+          echo $CONDA_PREFIX
           echo "CUDA_PATH=$CONDA_PREFIX" >> $GITHUB_ENV
 
       # Set up .NET SDKs

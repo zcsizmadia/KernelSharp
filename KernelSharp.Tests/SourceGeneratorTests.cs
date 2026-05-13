@@ -422,6 +422,198 @@ public class SourceGeneratorTests
             .Because("Runtime mode has no embedded PTX to decompress");
     }
 
+    [Test]
+    public async Task Generator_RuntimeMode_EmbedsCudaSourceVerbatim()
+    {
+        // The embedded source string must contain the actual CUDA code.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void MyKernel(float* b, int n) { b[0] = 42.0f; }",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void MyKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        string generated = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+
+        await Assert.That(generated).Contains("_MyKernel_cudaSource");
+        // The embedded string must contain the function body.
+        await Assert.That(generated).Contains("42.0f");
+    }
+
+    [Test]
+    public async Task Generator_RuntimeMode_EmitsModuleAndFuncFields()
+    {
+        // Runtime mode must still emit the _module and _func IntPtr fields.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void RtKernel(float* b, int n) {}",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void RtKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        string generated = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+
+        await Assert.That(generated).Contains("_RtKernel_module");
+        await Assert.That(generated).Contains("_RtKernel_func");
+    }
+
+    [Test]
+    public async Task Generator_RuntimeMode_EmitsEnsureLoadedGuard()
+    {
+        // EnsureLoaded must check _module != IntPtr.Zero to avoid double-loading.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void RtKernel(float* b, int n) {}",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void RtKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        string generated = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+
+        await Assert.That(generated).Contains("RtKernel_EnsureLoaded");
+        await Assert.That(generated).Contains("IntPtr.Zero");
+    }
+
+    [Test]
+    public async Task Generator_RuntimeMode_GetNativeArch_CalledBeforeCompile()
+    {
+        // In EnsureLoaded, GetNativeArch() must appear before NvrtcApi.Compile() in the source.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void RtKernel(float* b, int n) {}",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void RtKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        string generated = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+
+        int archIdx    = generated.IndexOf("NvrtcApi.GetNativeArch", System.StringComparison.Ordinal);
+        int compileIdx = generated.IndexOf("NvrtcApi.Compile",       System.StringComparison.Ordinal);
+        await Assert.That(archIdx).IsGreaterThan(0);
+        await Assert.That(compileIdx).IsGreaterThan(archIdx)
+            .Because("arch must be determined before Compile() is called");
+    }
+
+    [Test]
+    public async Task Generator_RuntimeMode_MultipleScalarParams_AllAppearInDispatch()
+    {
+        // All parameters must be forwarded in the cuLaunchKernel argument array.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void ScaleAdd(float* a, float scale, int n) {}",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void ScaleAdd(CudaBuffer<float> a, float scale, int n);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+        string generated = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+
+        await Assert.That(generated).Contains("scale");
+        await Assert.That(generated).Contains("_kp");
+        await Assert.That(generated).Contains("cuLaunchKernel");
+    }
+
+    [Test]
+    public async Task Generator_RuntimeMode_ProjectDefault_AppliesToAllKernels()
+    {
+        // When project default is Runtime, kernels without an explicit override
+        // should be treated as Runtime.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void DefaultK(float* b, int n) {}")]
+                public partial void DefaultK(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels,
+            CompileCudaKernelsTask.KernelCompilationMode.Runtime);
+        string generated = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+
+        await Assert.That(generated).Contains("_DefaultK_cudaSource")
+            .Because("project default Runtime should embed source, not PTX");
+        await Assert.That(generated).DoesNotContain("_DefaultK_ptx_encoded");
+    }
+
+    [Test]
+    public async Task Generator_MixedModes_BuildTimeAndRuntime_InSameClass()
+    {
+        // Two kernels in the same class with different modes must each generate
+        // the correct launcher type independently.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void BtKernel(float* b, int n) {}")]
+                public partial void BtKernel(CudaBuffer<float> b);
+                [GpuKernel("extern \"C\" __global__ void RtKernel(float* b, int n) {}",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void RtKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+
+        string btSource = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null, "brotli");
+        string rtSource = CompileCudaKernelsTask.BuildLauncherSource(kernels[1], null, "brotli");
+
+        // BuildTime kernel: PTX fields present, no cudaSource
+        await Assert.That(btSource).Contains("_BtKernel_ptx_encoded");
+        await Assert.That(btSource).DoesNotContain("_BtKernel_cudaSource");
+
+        // Runtime kernel: cudaSource present, no ptx_encoded
+        await Assert.That(rtSource).Contains("_RtKernel_cudaSource");
+        await Assert.That(rtSource).DoesNotContain("_RtKernel_ptx_encoded");
+    }
+
+    [Test]
+    public async Task Generator_RuntimeMode_NoPtxBytes_DoesNotAffectOutput()
+    {
+        // BuildLauncherSource is called with null PTX for Runtime kernels (NVRTC not invoked).
+        // Passing non-null PTX should be silently ignored in Runtime mode.
+        const string src = """
+            using KernelSharp;
+            namespace Ns { public partial class K {
+                [GpuKernel("extern \"C\" __global__ void RtKernel(float* b, int n) {}",
+                    Compilation = KernelCompilation.Runtime)]
+                public partial void RtKernel(CudaBuffer<float> b);
+            }}
+            """;
+        var tree = CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+        var kernels = new List<CompileCudaKernelsTask.KernelInfo>();
+        CompileCudaKernelsTask.ParseKernels(tree, string.Empty, kernels);
+
+        // With null PTX (normal path)
+        string withNull    = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], null,              "brotli");
+        // With non-null PTX (should be ignored)
+        string withPtxBytes = CompileCudaKernelsTask.BuildLauncherSource(kernels[0], new byte[]{ 1, 2, 3 }, "brotli");
+
+        await Assert.That(withNull).Contains("_RtKernel_cudaSource");
+        await Assert.That(withPtxBytes).Contains("_RtKernel_cudaSource");
+        await Assert.That(withPtxBytes).DoesNotContain("_RtKernel_ptx_encoded");
+    }
+
+
     // ── SourceFile tests ──────────────────────────────────────────────────────
 
     [Test]

@@ -16,10 +16,18 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            cuda: "12.6"
+            label: "Windows"
+            
+          - os: windows-latest
             cuda: "13.2"
             label: "Windows"
             upload_nupkgs: true
           
+          - os: ubuntu-latest
+            cuda: "12.6"
+            label: "Linux"
+
           - os: ubuntu-latest
             cuda: "13.2"
             label: "Linux"

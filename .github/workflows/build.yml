@@ -19,10 +19,10 @@ jobs:
 
         include:
           - os: windows-latest
-            name: "Windows"
+            name: "Windows x64"
 
           - os: ubuntu-latest
-            name: "Linux"
+            name: "Linux x64"
 
           - os: ubuntu-24.04-arm
             name: "Linux ARM64"
